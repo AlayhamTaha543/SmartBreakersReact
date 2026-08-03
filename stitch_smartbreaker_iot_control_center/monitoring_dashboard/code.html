@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SmartBreaker Monitor - Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#31343f",
+                        "error-container": "#93000a",
+                        "on-primary": "#002e6a",
+                        "secondary": "#45dfa4",
+                        "inverse-surface": "#e0e2f0",
+                        "on-tertiary-fixed": "#410004",
+                        "inverse-on-surface": "#2d303b",
+                        "tertiary": "#ffb3ad",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "on-error": "#690005",
+                        "on-primary-fixed": "#001a42",
+                        "on-secondary-fixed": "#002114",
+                        "surface-dim": "#10131d",
+                        "surface-tint": "#adc6ff",
+                        "outline": "#8c909f",
+                        "on-error-container": "#ffdad6",
+                        "primary-container": "#4d8eff",
+                        "error": "#ffb4ab",
+                        "surface-container": "#1c1f29",
+                        "tertiary-fixed": "#ffdad7",
+                        "primary-fixed-dim": "#adc6ff",
+                        "primary": "#adc6ff",
+                        "on-tertiary-fixed-variant": "#930013",
+                        "on-secondary-container": "#00452e",
+                        "secondary-fixed-dim": "#45dfa4",
+                        "surface-bright": "#363944",
+                        "surface-container-low": "#181b25",
+                        "background": "#10131d",
+                        "outline-variant": "#424754",
+                        "inverse-primary": "#005ac2",
+                        "on-primary-container": "#00285d",
+                        "on-background": "#e0e2f0",
+                        "on-secondary": "#003825",
+                        "primary-fixed": "#d8e2ff",
+                        "secondary-container": "#00bd85",
+                        "surface": "#10131d",
+                        "surface-container-high": "#272a34",
+                        "on-surface-variant": "#c2c6d6",
+                        "surface-container-lowest": "#0b0e17",
+                        "on-surface": "#e0e2f0",
+                        "on-primary-fixed-variant": "#004395",
+                        "on-tertiary-container": "#5c0008",
+                        "on-secondary-fixed-variant": "#005137",
+                        "on-tertiary": "#68000a",
+                        "tertiary-container": "#ff5451",
+                        "surface-variant": "#31343f",
+                        "secondary-fixed": "#68fcbf"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gap": "12px",
+                        "inner-element": "4px",
+                        "base": "8px",
+                        "margin-page": "24px",
+                        "padding-card": "16px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "mono-log": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "data-point": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700"}],
+                        "mono-log": ["12px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "data-point": ["18px", {"lineHeight": "24px", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0F1117;
+            color: #E8EAED;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .industrial-card {
+            background-color: #1A1D27;
+            border: 1px solid #2A2D3A;
+            padding: 16px;
+        }
+
+        .mono-text {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .status-pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(69, 223, 164, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(69, 223, 164, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(69, 223, 164, 0); }
+        }
+
+        .log-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: #424754 transparent;
+        }
+
+        .log-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .log-scroll::-webkit-scrollbar-thumb {
+            background-color: #424754;
+        }
+
+        .breaker-on {
+            border: 1px solid #45dfa4;
+            background: linear-gradient(135deg, rgba(69, 223, 164, 0.05) 0%, rgba(69, 223, 164, 0.1) 100%);
+        }
+
+        .breaker-off {
+            border: 1px dashed #424754;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+<!-- Top Bar -->
+<header class="h-16 flex items-center justify-between px-6 border-b border-outline-variant bg-surface-container-low shrink-0">
+<div class="flex items-center gap-6">
+<h1 class="font-headline-md text-headline-md font-bold text-primary">SmartBreaker <span class="font-normal text-on-surface-variant">Monitor</span></h1>
+<div class="h-6 w-px bg-outline-variant"></div>
+<div class="flex flex-col">
+<span class="text-label-caps font-label-caps text-on-surface-variant">SITE IDENTIFIER</span>
+<span class="text-body-sm font-body-sm text-on-surface font-medium">Site Alpha — Org 1</span>
+</div>
+</div>
+<div class="flex flex-col items-center">
+<span class="mono-text text-xl font-bold tracking-wider text-on-surface">2026-08-02 16:18:04</span>
+<div class="flex gap-4 mt-1">
+<span class="text-label-caps font-label-caps bg-surface-variant px-2 rounded">SCALE ×60</span>
+<span class="text-label-caps font-label-caps text-secondary flex items-center">
+<span class="status-pulse bg-secondary"></span> Tier-1: Connected
+                </span>
+<span class="text-label-caps font-label-caps text-secondary flex items-center">
+<span class="status-pulse bg-secondary"></span> Tier-2: Connected
+                </span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">notifications</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">settings</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A hyper-realistic professional user avatar of a tech engineer, clean cut with a modern aesthetic. The lighting is cold and clinical, typical of a high-tech control room environment, matching the dark UI theme with subtle blue highlights on the skin." src="https://lh3.googleusercontent.com/aida-public/AB6AXuATe7WcmC7nagjQup8aJQtBghs2sVs_eWfbJqaCZTk_g9XAUVodbWdDhZSsE6YFNAiw-PQeEKCW3Qjsg2ml4D5VZhAHbIeadufBUvnHPAHUl1tWHFpmgErUhjAGBNDDk2bnE3ittpS142nQY7FD8PoZeBiGdk2tPwM7PZjI3O_L1ZGdcJmbwpQYjnJ6GZpI7pei8bGpbUSXPuCqCiUf_21R7GDaDbc3xniC7e3zwiwrZNgaRewi7Q"/>
+</div>
+</div>
+</header>
+<!-- Sub-Header Strip -->
+<div class="bg-surface-container-lowest h-8 px-6 flex items-center border-b border-outline-variant">
+<span class="text-label-caps font-label-caps text-error tracking-[0.2em] font-bold">BEFORE DISTURBANCE</span>
+<div class="flex-grow mx-4 h-[1px] bg-outline-variant opacity-30"></div>
+<span class="text-label-caps font-label-caps text-on-surface-variant uppercase">Telemetry Mode: Active Streaming</span>
+</div>
+<!-- Main Dashboard Body -->
+<main class="flex-grow flex p-gap overflow-hidden h-full">
+<!-- Left Column (22%) -->
+<section class="w-[22%] flex flex-col gap-gap h-full overflow-y-auto">
+<!-- Environment Card -->
+<div class="industrial-card rounded-lg flex justify-between items-center">
+<div>
+<h3 class="text-label-caps font-label-caps text-on-surface-variant mb-2">ENVIRONMENT</h3>
+<div class="flex items-center gap-2">
+<span class="text-headline-md font-headline-md">Berlin</span>
+<span class="bg-primary-container text-on-primary-container text-[10px] px-1.5 py-0.5 rounded font-bold">SUMMER</span>
+</div>
+</div>
+<div class="text-right">
+<span class="material-symbols-outlined text-3xl text-primary">wb_sunny</span>
+<p class="text-label-caps font-label-caps text-on-surface mt-1">CLEAR / DAY</p>
+</div>
+</div>
+<!-- Power Sources Card -->
+<div class="industrial-card rounded-lg flex flex-col gap-4">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant border-b border-outline-variant pb-2">POWER SOURCES</h3>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<span class="text-label-caps font-label-caps text-on-surface-variant block mb-1">MAIN</span>
+<span class="mono-text text-display-lg text-primary leading-none block">11.9<span class="text-xl">V</span></span>
+</div>
+<div class="opacity-50">
+<span class="text-label-caps font-label-caps text-on-surface-variant block mb-1">RESERVE</span>
+<span class="mono-text text-display-lg text-on-surface-variant leading-none block">0.0<span class="text-xl">V</span></span>
+</div>
+</div>
+<div class="flex justify-between items-center bg-surface-container-low p-2 rounded">
+<span class="text-label-caps font-label-caps">GRID STATUS</span>
+<span class="text-label-caps font-label-caps text-secondary">CONNECTED</span>
+</div>
+</div>
+<!-- Solar/PV Card -->
+<div class="industrial-card rounded-lg relative overflow-hidden">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant mb-1">SOLAR GENERATION</h3>
+<div class="flex items-baseline gap-2">
+<span class="mono-text text-3xl font-bold text-secondary">4.2</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">kW</span>
+</div>
+<div class="h-12 mt-4 flex items-end gap-[2px]">
+<!-- Sparkline Mockup -->
+<div class="bg-secondary opacity-20 w-full h-[20%]"></div>
+<div class="bg-secondary opacity-40 w-full h-[40%]"></div>
+<div class="bg-secondary opacity-60 w-full h-[70%]"></div>
+<div class="bg-secondary opacity-80 w-full h-[55%]"></div>
+<div class="bg-secondary w-full h-[85%]"></div>
+<div class="bg-secondary w-full h-[95%]"></div>
+<div class="bg-secondary opacity-90 w-full h-[75%]"></div>
+</div>
+</div>
+<!-- Battery Card -->
+<div class="industrial-card rounded-lg">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant">BATTERY ESS</h3>
+<span class="mono-text text-secondary font-bold">67% SOC</span>
+</div>
+<div class="w-full bg-surface-container-highest h-3 rounded-full overflow-hidden mb-6">
+<div class="bg-secondary h-full w-[67%] shadow-[0_0_8px_rgba(69,223,164,0.4)]"></div>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<div class="text-center border-r border-outline-variant">
+<span class="text-[10px] text-on-surface-variant block uppercase">Voltage</span>
+<span class="mono-text text-sm font-bold">48.3V</span>
+</div>
+<div class="text-center border-r border-outline-variant">
+<span class="text-[10px] text-on-surface-variant block uppercase">Current</span>
+<span class="mono-text text-sm font-bold">12.1A</span>
+</div>
+<div class="text-center">
+<span class="text-[10px] text-on-surface-variant block uppercase">Temp</span>
+<span class="mono-text text-sm font-bold">32°C</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Center Column (44%) -->
+<section class="w-[44%] flex flex-col gap-gap h-full">
+<!-- Breaker Panel Grid -->
+<div class="industrial-card rounded-lg flex-grow flex flex-col">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant">BREAKER PANEL GRID</h3>
+<span class="text-label-caps font-label-caps bg-surface-container px-2 py-1 border border-outline-variant rounded">6 SLOTS ACTIVE</span>
+</div>
+<div class="grid grid-cols-2 lg:grid-cols-3 gap-gap flex-grow content-start">
+<!-- Breaker 1: ON -->
+<div class="industrial-card breaker-on rounded-lg relative group cursor-pointer transition-all duration-200 hover:brightness-110">
+<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_#45dfa4]"></div>
+<span class="text-[10px] mono-text text-on-surface-variant block mb-1">001</span>
+<h4 class="font-bold text-on-surface mb-2">sim-fridge</h4>
+<div class="flex justify-between items-end">
+<span class="text-label-caps font-label-caps text-secondary">ON</span>
+<span class="mono-text text-xl">3.2<span class="text-sm">A</span></span>
+</div>
+</div>
+<!-- Breaker 2: OFF -->
+<div class="industrial-card breaker-off rounded-lg relative">
+<span class="text-[10px] mono-text text-on-surface-variant block mb-1">002</span>
+<h4 class="font-bold text-on-surface-variant mb-2">sim-ac-unit</h4>
+<div class="flex justify-between items-end">
+<span class="text-label-caps font-label-caps text-on-surface-variant">OFF</span>
+<span class="mono-text text-xl">0.0<span class="text-sm">A</span></span>
+</div>
+</div>
+<!-- Breaker 3: ON -->
+<div class="industrial-card breaker-on rounded-lg relative">
+<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_#45dfa4]"></div>
+<span class="text-[10px] mono-text text-on-surface-variant block mb-1">003</span>
+<h4 class="font-bold text-on-surface mb-2">lab-lighting</h4>
+<div class="flex justify-between items-end">
+<span class="text-label-caps font-label-caps text-secondary">ON</span>
+<span class="mono-text text-xl">1.5<span class="text-sm">A</span></span>
+</div>
+</div>
+<!-- Breaker 4: ON -->
+<div class="industrial-card breaker-on rounded-lg relative">
+<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_#45dfa4]"></div>
+<span class="text-[10px] mono-text text-on-surface-variant block mb-1">004</span>
+<h4 class="font-bold text-on-surface mb-2">hvac-aux</h4>
+<div class="flex justify-between items-end">
+<span class="text-label-caps font-label-caps text-secondary">ON</span>
+<span class="mono-text text-xl">8.9<span class="text-sm">A</span></span>
+</div>
+</div>
+<!-- Breaker 5: OFF -->
+<div class="industrial-card breaker-off rounded-lg relative">
+<span class="text-[10px] mono-text text-on-surface-variant block mb-1">005</span>
+<h4 class="font-bold text-on-surface-variant mb-2">ev-charger</h4>
+<div class="flex justify-between items-end">
+<span class="text-label-caps font-label-caps text-on-surface-variant">OFF</span>
+<span class="mono-text text-xl">0.0<span class="text-sm">A</span></span>
+</div>
+</div>
+<!-- Breaker 6: ON -->
+<div class="industrial-card breaker-on rounded-lg relative">
+<div class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_#45dfa4]"></div>
+<span class="text-[10px] mono-text text-on-surface-variant block mb-1">006</span>
+<h4 class="font-bold text-on-surface mb-2">it-rack-01</h4>
+<div class="flex justify-between items-end">
+<span class="text-label-caps font-label-caps text-secondary">ON</span>
+<span class="mono-text text-xl">4.1<span class="text-sm">A</span></span>
+</div>
+</div>
+</div>
+</div>
+<!-- Real-Time Metrics Tiles -->
+<div class="grid grid-cols-4 gap-inner-element">
+<div class="industrial-card rounded-lg py-3 px-4">
+<span class="text-[10px] text-on-surface-variant block uppercase font-bold">Total Load</span>
+<div class="flex items-center gap-1">
+<span class="mono-text text-xl font-bold">17.7</span>
+<span class="text-error text-[10px] material-symbols-outlined">north</span>
+</div>
+</div>
+<div class="industrial-card rounded-lg py-3 px-4">
+<span class="text-[10px] text-on-surface-variant block uppercase font-bold">PV Output</span>
+<div class="flex items-center gap-1">
+<span class="mono-text text-xl font-bold">4.2</span>
+<span class="text-secondary text-[10px] material-symbols-outlined">south</span>
+</div>
+</div>
+<div class="industrial-card rounded-lg py-3 px-4">
+<span class="text-[10px] text-on-surface-variant block uppercase font-bold">Net Power</span>
+<div class="flex items-center gap-1">
+<span class="mono-text text-xl font-bold">13.5</span>
+<span class="text-error text-[10px] material-symbols-outlined">north</span>
+</div>
+</div>
+<div class="industrial-card rounded-lg py-3 px-4">
+<span class="text-[10px] text-on-surface-variant block uppercase font-bold">Bat Power</span>
+<div class="flex items-center gap-1">
+<span class="mono-text text-xl font-bold">-0.8</span>
+<span class="text-on-surface-variant text-[10px] material-symbols-outlined">horizontal_rule</span>
+</div>
+</div>
+</div>
+<!-- Production Graph & Env Trends -->
+<div class="grid grid-cols-3 gap-gap">
+<div class="col-span-2 industrial-card rounded-lg h-40">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant">PV PRODUCTION HISTORY (24H)</h3>
+<span class="text-[10px] text-on-surface-variant mono-text">PEAK: 5.8 kW</span>
+</div>
+<div class="w-full h-24 relative flex items-end">
+<!-- Simplified Graph Representation -->
+<div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(173,198,255,0.05)_0%,_transparent_70%)]"></div>
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 40">
+<path d="M0 40 Q 10 38, 20 30 T 40 10 T 60 5 T 80 25 T 100 35" fill="none" stroke="#adc6ff" stroke-width="0.5"></path>
+<path d="M0 40 Q 10 38, 20 30 T 40 10 T 60 5 T 80 25 T 100 35 V 40 H 0" fill="url(#grad1)" opacity="0.2"></path>
+<defs>
+<lineargradient id="grad1" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" style="stop-color:#adc6ff;stop-opacity:1"></stop>
+<stop offset="100%" style="stop-color:#adc6ff;stop-opacity:0"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+</div>
+<div class="industrial-card rounded-lg flex flex-col justify-around">
+<div class="border-b border-outline-variant pb-2">
+<div class="flex justify-between items-center">
+<span class="text-[10px] text-on-surface-variant uppercase">Temp</span>
+<span class="mono-text text-sm font-bold">24.5°C</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full mt-1 overflow-hidden">
+<div class="bg-tertiary h-full w-[45%]"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center">
+<span class="text-[10px] text-on-surface-variant uppercase">Hum</span>
+<span class="mono-text text-sm font-bold">45%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full mt-1 overflow-hidden">
+<div class="bg-primary h-full w-[45%]"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Column (34%) -->
+<section class="w-[34%] flex flex-col gap-gap h-full overflow-hidden">
+<!-- System Tier Status Cards -->
+<div class="grid grid-cols-2 gap-gap">
+<div class="industrial-card rounded-lg">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant mb-3">TIER-1 GATEWAY</h3>
+<div class="flex items-center justify-between">
+<span class="bg-secondary/15 text-secondary text-[10px] px-2 py-0.5 rounded-full font-bold border border-secondary/30">IDLE</span>
+<span class="mono-text text-xs text-on-surface-variant">TX: 24 kbps</span>
+</div>
+</div>
+<div class="industrial-card rounded-lg border-l-4 border-l-primary">
+<h3 class="text-label-caps font-label-caps text-primary mb-3">TIER-2 CONTROLLER</h3>
+<div class="flex items-center justify-between">
+<span class="bg-primary/20 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold border border-primary/40 animate-pulse">ACTIVE</span>
+<span class="mono-text text-xs text-on-surface-variant">TX: 128 kbps</span>
+</div>
+</div>
+</div>
+<!-- Evidence Stream -->
+<div class="industrial-card rounded-lg flex-grow flex flex-col overflow-hidden">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-label-caps font-label-caps text-on-surface-variant">EVIDENCE STREAM</h3>
+<div class="flex gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+</div>
+</div>
+<div class="log-scroll flex-grow overflow-y-auto space-y-2 pr-2">
+<!-- Log Item -->
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded">
+<span class="mono-text text-on-surface-variant shrink-0">16:17:58</span>
+<span class="text-tertiary bg-tertiary/10 px-1 rounded h-fit font-bold shrink-0">T1</span>
+<span class="mono-text text-on-surface flex-grow italic">Disturbance detected: Phase-A Under-voltage</span>
+</div>
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded">
+<span class="mono-text text-on-surface-variant shrink-0">16:17:59</span>
+<span class="text-primary bg-primary/10 px-1 rounded h-fit font-bold shrink-0">T2</span>
+<span class="mono-text text-on-surface flex-grow">Evaluating islanding protocol v4.2...</span>
+</div>
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded">
+<span class="mono-text text-on-surface-variant shrink-0">16:18:01</span>
+<span class="text-secondary bg-secondary/10 px-1 rounded h-fit font-bold shrink-0">EXEC</span>
+<span class="mono-text text-on-surface flex-grow font-bold">Command: sim-ac-unit OFF [Safety Interlock]</span>
+</div>
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded">
+<span class="mono-text text-on-surface-variant shrink-0">16:18:02</span>
+<span class="text-primary bg-primary/10 px-1 rounded h-fit font-bold shrink-0">T2</span>
+<span class="mono-text text-on-surface flex-grow">Load shed complete. System stable.</span>
+</div>
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded">
+<span class="mono-text text-on-surface-variant shrink-0">16:18:03</span>
+<span class="text-secondary bg-secondary/10 px-1 rounded h-fit font-bold shrink-0">EXEC</span>
+<span class="mono-text text-on-surface flex-grow">Monitoring frequency deviation [59.94 Hz]</span>
+</div>
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded">
+<span class="mono-text text-on-surface-variant shrink-0">16:18:04</span>
+<span class="text-tertiary bg-tertiary/10 px-1 rounded h-fit font-bold shrink-0">T1</span>
+<span class="mono-text text-on-surface flex-grow">Heartbeat signal acknowledged.</span>
+</div>
+<div class="flex gap-3 text-[11px] leading-tight group hover:bg-surface-container-high p-1 rounded opacity-60">
+<span class="mono-text text-on-surface-variant shrink-0">16:17:40</span>
+<span class="text-primary bg-primary/10 px-1 rounded h-fit font-bold shrink-0">T2</span>
+<span class="mono-text text-on-surface flex-grow">Background sync: Org 1 Cloud API.</span>
+</div>
+</div>
+</div>
+<!-- Leak Detection -->
+<div class="industrial-card rounded-lg flex items-center justify-between border-t-2 border-t-secondary/50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">water_drop</span>
+<div>
+<h3 class="text-label-caps font-label-caps text-on-surface-variant">LEAK DETECTION</h3>
+<p class="mono-text text-sm font-bold text-on-surface">NORMAL</p>
+</div>
+</div>
+<div class="text-right">
+<span class="text-label-caps font-label-caps text-secondary">0.0 GPH</span>
+<div class="flex gap-1 mt-1">
+<div class="w-3 h-1 bg-secondary"></div>
+<div class="w-3 h-1 bg-surface-container"></div>
+<div class="w-3 h-1 bg-surface-container"></div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Contextual Footer -->
+<footer class="h-10 bg-surface-container-high border-t border-outline-variant flex items-center px-margin-page justify-between shrink-0">
+<div class="flex gap-6 items-center">
+<span class="text-[10px] mono-text text-on-surface-variant">FIRMWARE: V2.8.1-BETA</span>
+<span class="text-[10px] mono-text text-on-surface-variant">Uptime: 142d 04h 22m</span>
+</div>
+<div class="flex gap-4">
+<span class="text-label-caps font-label-caps text-primary cursor-pointer hover:underline">Download Report (PDF)</span>
+<span class="text-label-caps font-label-caps text-on-surface-variant">Node ID: SB-AL-001</span>
+</div>
+</footer>
+<script>
+        // Micro-interaction: Periodic update of the clock to simulate real-time
+        function updateClock() {
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            const timeStr = now.toTimeString().split(' ')[0];
+            const clockEl = document.querySelector('.mono-text.text-xl.font-bold.tracking-wider');
+            if(clockEl) clockEl.innerText = `${dateStr} ${timeStr}`;
+        }
+        setInterval(updateClock, 1000);
+
+        // Micro-interaction: Sparkline random jitter
+        setInterval(() => {
+            const sparks = document.querySelectorAll('.bg-secondary.w-full');
+            sparks.forEach(spark => {
+                const randomHeight = Math.floor(Math.random() * 40) + 50;
+                spark.style.height = randomHeight + '%';
+            });
+        }, 3000);
+    </script>
+</body></html>

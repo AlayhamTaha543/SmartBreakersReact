@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SmartBreaker | Initialization &amp; Logic Configuration</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #10131d; }
+        ::-webkit-scrollbar-thumb { background: #424754; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8c909f; }
+
+        .logic-row-if { border-left: 4px solid #4d8eff; }
+        .logic-row-then { border-left: 4px solid #45dfa4; }
+
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .status-pulse { animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#31343f",
+                        "error-container": "#93000a",
+                        "on-primary": "#002e6a",
+                        "secondary": "#45dfa4",
+                        "inverse-surface": "#e0e2f0",
+                        "on-tertiary-fixed": "#410004",
+                        "inverse-on-surface": "#2d303b",
+                        "tertiary": "#ffb3ad",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "on-error": "#690005",
+                        "on-primary-fixed": "#001a42",
+                        "on-secondary-fixed": "#002114",
+                        "surface-dim": "#10131d",
+                        "surface-tint": "#adc6ff",
+                        "outline": "#8c909f",
+                        "on-error-container": "#ffdad6",
+                        "primary-container": "#4d8eff",
+                        "error": "#ffb4ab",
+                        "surface-container": "#1c1f29",
+                        "tertiary-fixed": "#ffdad7",
+                        "primary-fixed-dim": "#adc6ff",
+                        "primary": "#adc6ff",
+                        "on-tertiary-fixed-variant": "#930013",
+                        "on-secondary-container": "#00452e",
+                        "secondary-fixed-dim": "#45dfa4",
+                        "surface-bright": "#363944",
+                        "surface-container-low": "#181b25",
+                        "background": "#10131d",
+                        "outline-variant": "#424754",
+                        "inverse-primary": "#005ac2",
+                        "on-primary-container": "#00285d",
+                        "on-background": "#e0e2f0",
+                        "on-secondary": "#003825",
+                        "primary-fixed": "#d8e2ff",
+                        "secondary-container": "#00bd85",
+                        "surface": "#10131d",
+                        "surface-container-high": "#272a34",
+                        "on-surface-variant": "#c2c6d6",
+                        "surface-container-lowest": "#0b0e17",
+                        "on-surface": "#e0e2f0",
+                        "on-primary-fixed-variant": "#004395",
+                        "on-tertiary-container": "#5c0008",
+                        "on-secondary-fixed-variant": "#005137",
+                        "on-tertiary": "#68000a",
+                        "tertiary-container": "#ff5451",
+                        "surface-variant": "#31343f",
+                        "secondary-fixed": "#68fcbf"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gap": "12px",
+                        "inner-element": "4px",
+                        "base": "8px",
+                        "margin-page": "24px",
+                        "padding-card": "16px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "mono-log": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "data-point": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "display-lg": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700"}],
+                        "mono-log": ["12px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "data-point": ["18px", {"lineHeight": "24px", "fontWeight": "500"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex flex-col font-body-sm selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<nav class="bg-surface border-b border-outline-variant flex justify-between items-center w-full px-margin-page h-16 sticky top-0 z-50">
+<div class="flex items-center gap-base">
+<span class="material-symbols-outlined text-primary text-headline-md" style="font-variation-settings: 'FILL' 1;">dynamic_form</span>
+<span class="text-headline-md font-headline-md font-bold text-primary">SmartBreaker</span>
+</div>
+<div class="hidden md:flex items-center gap-8 h-full">
+<a class="text-label-caps font-label-caps text-on-surface-variant hover:text-primary transition-colors h-full flex items-center px-2" href="#">DASHBOARD</a>
+<a class="text-label-caps font-label-caps text-primary border-b-2 border-primary pb-1 h-full flex items-center px-2" href="#">CONFIGURATION</a>
+</div>
+<div class="flex items-center gap-padding-card">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">notifications</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">settings</button>
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A clean professional headshot of a technical system administrator wearing a dark navy utility uniform, neutral expression, industrial control room background with soft blue lighting, professional corporate photography style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDoiI614myUTlCI0MekGCZ-4GI0E-YZtcit1Z2qoPzhy7fyN030gFHfGyBuQN56T0cbHnqTU3-4OaSU5n72t4P-e7OWpiPJ9HNHvpH5OsGDbihTqBTBCqY5AZqhCt4mSu1wPNNFsBdRdsO1d_WOyzl6vlfPFoRZprCVGH1f2_2G1CWXsBBEy3LnY7CEi-z-c5okf2Ge5LGPxpOdG0CXMx5pDgPHW0a-D18f3oCCWS1rCy4jIS3R7w"/>
+</div>
+</div>
+</nav>
+<main class="flex-grow p-margin-page max-w-[1440px] mx-auto w-full flex flex-col gap-margin-page">
+<!-- Section A: Logic Schemes -->
+<section class="bg-surface-container border border-outline-variant rounded shadow-none overflow-hidden flex flex-col">
+<div class="p-padding-card border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+<div class="flex flex-col">
+<h2 class="text-headline-md font-headline-md text-on-surface">Event Logic Schemes</h2>
+<p class="text-body-sm text-on-surface-variant">Define IF/THEN automation sequences for breaker nodes.</p>
+</div>
+<button class="bg-surface-container-highest hover:bg-outline-variant text-primary px-padding-card py-base flex items-center gap-base rounded transition-all active:scale-95">
+<span class="material-symbols-outlined text-[20px]">add</span>
+<span class="text-label-caps font-label-caps">ADD SCHEME</span>
+</button>
+</div>
+<div class="p-padding-card flex flex-col gap-padding-card">
+<div class="flex flex-col gap-inner-element max-w-sm">
+<label class="text-label-caps font-label-caps text-on-surface-variant">SCHEME NAME</label>
+<input class="bg-surface-container-lowest border border-outline-variant text-on-surface font-mono-log focus:border-primary focus:ring-0 rounded-sm px-base py-base" type="text" value="ROOM 1 LOGIC"/>
+</div>
+<div class="overflow-x-auto border border-outline-variant rounded">
+<table class="w-full text-left border-collapse font-mono-log">
+<thead>
+<tr class="bg-surface-container-high text-on-surface-variant border-b border-outline-variant">
+<th class="px-padding-card py-base text-label-caps font-label-caps">#</th>
+<th class="px-padding-card py-base text-label-caps font-label-caps">ACTION</th>
+<th class="px-padding-card py-base text-label-caps font-label-caps">PARAMETER</th>
+<th class="px-padding-card py-base text-label-caps font-label-caps">CONDITION</th>
+<th class="px-padding-card py-base text-label-caps font-label-caps">THRESHOLD</th>
+<th class="px-padding-card py-base text-label-caps font-label-caps">OPERATOR</th>
+<th class="px-padding-card py-base text-label-caps font-label-caps text-right">ACTIONS</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Row 1 -->
+<tr class="logic-row-if bg-surface-container-low hover:bg-surface-container-high transition-colors">
+<td class="px-padding-card py-padding-card text-on-surface-variant">1</td>
+<td class="px-padding-card py-padding-card font-bold text-primary">IF</td>
+<td class="px-padding-card py-padding-card">Temperature room 1</td>
+<td class="px-padding-card py-padding-card">high alarm</td>
+<td class="px-padding-card py-padding-card text-data-point font-data-point">80</td>
+<td class="px-padding-card py-padding-card">
+<span class="bg-primary/10 text-primary border border-primary/20 text-[10px] font-bold px-inner-element py-[2px] rounded uppercase">AND</span>
+</td>
+<td class="px-padding-card py-padding-card text-right space-x-base">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface">edit</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-error">delete</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="logic-row-if bg-surface-container-low hover:bg-surface-container-high transition-colors">
+<td class="px-padding-card py-padding-card text-on-surface-variant">2</td>
+<td class="px-padding-card py-padding-card font-bold text-primary">IF</td>
+<td class="px-padding-card py-padding-card">Humidity room 1</td>
+<td class="px-padding-card py-padding-card">high alarm</td>
+<td class="px-padding-card py-padding-card text-data-point font-data-point">70</td>
+<td class="px-padding-card py-padding-card">
+<span class="bg-outline-variant/30 text-on-surface-variant border border-outline-variant text-[10px] font-bold px-inner-element py-[2px] rounded uppercase">END</span>
+</td>
+<td class="px-padding-card py-padding-card text-right space-x-base">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface">edit</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-error">delete</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="logic-row-then bg-surface-container-low hover:bg-surface-container-high transition-colors">
+<td class="px-padding-card py-padding-card text-on-surface-variant">3</td>
+<td class="px-padding-card py-padding-card font-bold text-secondary">THEN</td>
+<td class="px-padding-card py-padding-card">Relay 1</td>
+<td class="px-padding-card py-padding-card">on</td>
+<td class="px-padding-card py-padding-card">-</td>
+<td class="px-padding-card py-padding-card">-</td>
+<td class="px-padding-card py-padding-card text-right space-x-base">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface">edit</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-error">delete</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="logic-row-then bg-surface-container-low hover:bg-surface-container-high transition-colors">
+<td class="px-padding-card py-padding-card text-on-surface-variant">4</td>
+<td class="px-padding-card py-padding-card font-bold text-secondary">THEN</td>
+<td class="px-padding-card py-padding-card">E-mail admin</td>
+<td class="px-padding-card py-padding-card">send email</td>
+<td class="px-padding-card py-padding-card">-</td>
+<td class="px-padding-card py-padding-card">-</td>
+<td class="px-padding-card py-padding-card text-right space-x-base">
+<button class="material-symbols-outlined text-on-surface-variant hover:text-on-surface">edit</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-error">delete</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="flex justify-end gap-padding-card mt-base">
+<button class="px-padding-card py-base text-label-caps font-label-caps text-on-surface-variant hover:text-on-surface transition-colors">CANCEL</button>
+<button class="px-padding-card py-base text-label-caps font-label-caps border border-error text-error hover:bg-error-container hover:text-white transition-all rounded">DELETE</button>
+<button class="px-padding-card py-base text-label-caps font-label-caps border border-outline-variant text-on-surface hover:bg-surface-container-highest transition-all rounded">APPLY</button>
+<button class="px-padding-card py-base text-label-caps font-label-caps bg-primary-container text-on-primary-container hover:opacity-90 transition-all rounded font-bold shadow-[0_0_8px_rgba(77,142,255,0.4)]">OK</button>
+</div>
+</div>
+</section>
+<!-- Section B: Initial Site Parameters -->
+<section class="bg-surface-container border border-outline-variant rounded shadow-none overflow-hidden flex flex-col mb-padding-card">
+<div class="p-padding-card border-b border-outline-variant bg-surface-container-low">
+<h2 class="text-headline-md font-headline-md text-on-surface">Initial Site Parameters</h2>
+<p class="text-body-sm text-on-surface-variant">Configure hardware telemetry and environment environmental variables.</p>
+</div>
+<div class="p-padding-card flex flex-col gap-margin-page">
+<!-- 3-Column Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-margin-page">
+<!-- Column 1: Power -->
+<div class="flex flex-col gap-padding-card border-r border-outline-variant/30 pr-margin-page">
+<div class="flex items-center gap-base text-primary">
+<span class="material-symbols-outlined">bolt</span>
+<span class="text-label-caps font-label-caps">POWER GENERATION</span>
+</div>
+<div class="grid grid-cols-1 gap-base font-mono-log">
+<div class="flex flex-col">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">PV Production</label>
+<div class="flex items-end gap-inner-element">
+<span class="text-data-point font-data-point text-on-surface">5.24</span>
+<span class="text-body-sm text-on-surface-variant pb-1">kW</span>
+</div>
+</div>
+<div class="flex flex-col">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Inverter Power</label>
+<div class="flex items-end gap-inner-element">
+<span class="text-data-point font-data-point text-on-surface">4.88</span>
+<span class="text-body-sm text-on-surface-variant pb-1">kW</span>
+</div>
+</div>
+<div class="flex flex-col">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Inverter Temp</label>
+<div class="flex items-end gap-inner-element">
+<span class="text-data-point font-data-point text-secondary">42.5</span>
+<span class="text-body-sm text-on-surface-variant pb-1">°C</span>
+</div>
+</div>
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Inverter Status</label>
+<select class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary">
+<option>OPERATIONAL</option>
+<option>STANDBY</option>
+<option>ERROR</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Column 2: Battery/Grid -->
+<div class="flex flex-col gap-padding-card border-r border-outline-variant/30 pr-margin-page">
+<div class="flex items-center gap-base text-secondary">
+<span class="material-symbols-outlined">battery_charging_full</span>
+<span class="text-label-caps font-label-caps">ENERGY STORAGE &amp; GRID</span>
+</div>
+<div class="grid grid-cols-1 gap-base font-mono-log">
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Battery SOC</label>
+<div class="flex items-center gap-base">
+<div class="flex-grow bg-surface-container-highest h-4 rounded-sm overflow-hidden border border-outline-variant">
+<div class="bg-secondary h-full w-[82%] relative">
+<div class="absolute inset-0 bg-white/20 animate-pulse"></div>
+</div>
+</div>
+<span class="text-data-point font-data-point text-secondary w-12 text-right">82%</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-base">
+<div class="flex flex-col">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Voltage</label>
+<span class="text-data-point font-data-point text-on-surface">230.1 V</span>
+</div>
+<div class="flex flex-col">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Current</label>
+<span class="text-data-point font-data-point text-on-surface">12.5 A</span>
+</div>
+</div>
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Grid Status</label>
+<select class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary">
+<option>CONNECTED</option>
+<option>DISCONNECTED</option>
+</select>
+</div>
+<div class="flex flex-col">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Grid Power</label>
+<span class="text-data-point font-data-point text-on-surface">0.00 kW</span>
+</div>
+</div>
+</div>
+<!-- Column 3: Env -->
+<div class="flex flex-col gap-padding-card">
+<div class="flex items-center gap-base text-tertiary-container">
+<span class="material-symbols-outlined">schedule</span>
+<span class="text-label-caps font-label-caps">ENVIRONMENT CONTEXT</span>
+</div>
+<div class="grid grid-cols-2 gap-base font-mono-log">
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Start Date</label>
+<input class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary" type="date" value="2024-05-20"/>
+</div>
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Start Time</label>
+<input class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary" type="time" value="08:00"/>
+</div>
+<div class="flex flex-col gap-inner-element col-span-2">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">City</label>
+<input class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary" type="text" value="Berlin"/>
+</div>
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Season</label>
+<select class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary">
+<option>SUMMER</option>
+<option>AUTUMN</option>
+<option>WINTER</option>
+<option>SPRING</option>
+</select>
+</div>
+<div class="flex flex-col gap-inner-element">
+<label class="text-[10px] text-on-surface-variant uppercase tracking-wider">Weather</label>
+<select class="bg-surface-container-lowest border border-outline-variant text-on-surface rounded-sm py-1 px-base text-body-sm focus:ring-0 focus:border-primary">
+<option>SUNNY</option>
+<option>CLOUDY</option>
+<option>RAINY</option>
+<option>STORM</option>
+</select>
+</div>
+</div>
+</div>
+</div>
+<!-- Breaker Toggles Row -->
+<div class="bg-surface-container-lowest border border-outline-variant p-padding-card rounded">
+<label class="text-label-caps font-label-caps text-on-surface-variant mb-padding-card block">BREAKER SIMULATION OVERRIDES</label>
+<div class="flex flex-wrap gap-margin-page items-center">
+<!-- Toggle Item -->
+<div class="flex items-center gap-base">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+<span class="text-body-sm font-mono-log text-on-surface uppercase">sim-servers</span>
+<span class="text-[10px] text-secondary font-bold status-pulse">ON</span>
+</div>
+<div class="flex items-center gap-base">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+<span class="text-body-sm font-mono-log text-on-surface uppercase">sim-fridge</span>
+<span class="text-[10px] text-secondary font-bold status-pulse">ON</span>
+</div>
+<div class="flex items-center gap-base">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+<span class="text-body-sm font-mono-log text-on-surface uppercase">sim-ac-unit</span>
+<span class="text-[10px] text-secondary font-bold status-pulse">ON</span>
+</div>
+<div class="flex items-center gap-base">
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+<span class="text-body-sm font-mono-log text-on-surface-variant uppercase">sim-event-load</span>
+<span class="text-[10px] text-on-surface-variant font-bold">OFF</span>
+</div>
+<div class="flex items-center gap-base">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+<span class="text-body-sm font-mono-log text-on-surface uppercase">sim-grid</span>
+<span class="text-[10px] text-secondary font-bold status-pulse">ON</span>
+</div>
+</div>
+</div>
+<!-- Footer Buttons -->
+<div class="flex justify-between items-center pt-padding-card">
+<button class="flex items-center gap-base text-on-surface-variant hover:text-error transition-colors px-padding-card py-base rounded border border-transparent hover:border-error">
+<span class="material-symbols-outlined">restart_alt</span>
+<span class="text-label-caps font-label-caps">RESET TO DEFAULTS</span>
+</button>
+<button class="bg-primary hover:bg-primary-container text-on-primary font-bold px-8 py-3 rounded flex items-center gap-padding-card transition-all active:scale-95 shadow-[0_4px_12px_rgba(173,198,255,0.25)]">
+<span class="text-label-caps font-label-caps tracking-widest">SAVE &amp; INITIALIZE SYSTEM</span>
+<span class="material-symbols-outlined">rocket_launch</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Visual Background Element -->
+<div class="fixed inset-0 -z-10 pointer-events-none opacity-5">
+<div class="absolute top-0 right-0 w-[500px] h-[500px] bg-primary rounded-full filter blur-[150px]"></div>
+<div class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-secondary rounded-full filter blur-[120px]"></div>
+</div>
+<script>
+        // Simple micro-interaction for logic rows
+        document.querySelectorAll('tr').forEach(row => {
+            row.addEventListener('click', () => {
+                // Focus simulation
+                if(!row.querySelector('th')) {
+                    document.querySelectorAll('tr').forEach(r => r.classList.remove('bg-surface-container-highest'));
+                    row.classList.add('bg-surface-container-highest');
+                }
+            });
+        });
+
+        // Toggle state simulation
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const label = e.target.closest('.flex').querySelector('.text-[10px]');
+                const textLabel = e.target.closest('.flex').querySelector('.text-body-sm');
+                if(e.target.checked) {
+                    label.textContent = 'ON';
+                    label.classList.add('text-secondary', 'status-pulse');
+                    label.classList.remove('text-on-surface-variant');
+                    textLabel.classList.remove('text-on-surface-variant');
+                    textLabel.classList.add('text-on-surface');
+                } else {
+                    label.textContent = 'OFF';
+                    label.classList.remove('text-secondary', 'status-pulse');
+                    label.classList.add('text-on-surface-variant');
+                    textLabel.classList.add('text-on-surface-variant');
+                    textLabel.classList.remove('text-on-surface');
+                }
+            });
+        });
+    </script>
+</body></html>
