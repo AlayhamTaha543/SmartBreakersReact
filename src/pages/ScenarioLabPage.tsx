@@ -35,13 +35,14 @@ export function ScenarioLabPage() {
     catch (error) { setMessage('Unable to start: ' + (error instanceof Error ? error.message : String(error))) }
   }
   const passed = scenario.completed && scenario.results.every((item) => item === 'pass')
+  const progress = Math.min(100, scenario.completed ? 100 : scenario.elapsedRealS / definition.durationRealS * 100)
 
   return (
     <div className="min-h-screen bg-surface text-ink">
-      <header className="sticky top-0 z-30 border-b border-outline bg-surface/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-outline bg-surface/90 px-4 py-3 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3">
-          <Link className="flex items-center gap-2 text-primary" to="/"><ArrowLeft size={18} /> Dashboard</Link>
-          <div className="text-center"><h1 className="flex items-center gap-2 font-semibold"><FlaskConical size={18} className="text-tertiary" /> Scenario Lab</h1><p className="text-[10px] uppercase text-muted">17 deterministic real-engine definitions</p></div>
+          <Link className="flex items-center gap-2 text-primary transition hover:text-ink" to="/"><ArrowLeft size={18} /> Dashboard</Link>
+          <div className="flex items-center gap-3 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-tertiary/10 text-tertiary"><FlaskConical size={19} /></span><div><h1 className="font-semibold">Scenario Lab</h1><p className="text-[10px] uppercase tracking-wider text-muted">17 deterministic real-engine definitions</p></div></div>
           <div className="flex items-center gap-2"><ThemeToggle /><Link className="button-secondary" to="/configuration">Configuration</Link></div>
         </div>
       </header>
@@ -54,8 +55,9 @@ export function ScenarioLabPage() {
               <h3 className="sticky top-0 z-10 bg-surface-lowest px-2 py-2 text-[10px] font-bold uppercase text-muted">{tier}</h3>
               {scenarios.filter((item) => item.tier === tier).map((item) => (
                 <button key={item.id} type="button" onClick={() => { selectScenario(item.id); setMessage('') }}
-                  className={'mb-1 w-full rounded border p-3 text-left transition ' + (definition.id === item.id ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-surface-high')}>
-                  <span className="block text-xs font-semibold">{item.name}</span>
+                  className={'relative mb-1 w-full overflow-hidden rounded-lg border p-3 pl-4 text-left transition hover:bg-surface-high ' + (definition.id === item.id ? 'border-primary/50 bg-primary/[.08] shadow-sm' : 'border-transparent')}>
+                  {definition.id === item.id && <span className="absolute inset-y-2 left-0 w-1 rounded-r bg-primary-strong" />}
+                  <span className="flex items-center justify-between gap-2"><span className={'text-xs font-semibold ' + (definition.id === item.id ? 'text-primary' : 'text-ink')}>{item.name}</span>{definition.id === item.id && <span className="event-badge border-primary/30 bg-primary/10 text-primary">Selected</span>}</span>
                   <span className="mt-1 block font-mono text-[9px] text-muted">{item.durationRealS}s real · {item.events.length} disturbance{item.events.length === 1 ? '' : 's'}</span>
                 </button>
               ))}
@@ -67,8 +69,8 @@ export function ScenarioLabPage() {
           <section className="panel overflow-hidden">
             <div className="panel-header flex flex-wrap items-center justify-between gap-3">
               <div><p className="eyebrow">{definition.tier} · {definition.id}</p><h2 className="mt-1 text-xl font-semibold">{definition.name}</h2></div>
-              <span className={'rounded px-3 py-1 text-[10px] font-bold ' + (scenario.active ? 'bg-secondary/10 text-secondary' : scenario.completed ? (passed ? 'bg-secondary/10 text-secondary' : 'bg-danger/10 text-danger') : 'bg-surface-highest text-muted')}>
-                {scenario.active ? 'RUNNING' : scenario.completed ? (passed ? 'PASS' : 'FAIL') : loaded ? 'LOADED' : 'PREVIEW'}
+              <span className={'event-badge px-3 py-1.5 ' + (scenario.active ? 'border-secondary/30 bg-secondary/10 text-secondary' : scenario.completed ? (passed ? 'border-secondary/30 bg-secondary/10 text-secondary' : 'border-danger/30 bg-danger/10 text-danger') : loaded ? 'border-primary/30 bg-primary/10 text-primary' : 'border-outline bg-surface-high text-muted')}>
+                <span className={'mr-2 h-1.5 w-1.5 rounded-full ' + (scenario.active ? 'animate-pulse-soft bg-secondary' : scenario.completed ? (passed ? 'bg-secondary' : 'bg-danger') : loaded ? 'bg-primary' : 'bg-muted')} />{scenario.active ? 'RUNNING' : scenario.completed ? (passed ? 'PASS' : 'FAIL') : loaded ? 'LOADED' : 'PREVIEW'}
               </span>
             </div>
             <div className="p-4">
@@ -78,8 +80,8 @@ export function ScenarioLabPage() {
                 <button className="button-primary" type="button" disabled={!loaded || scenario.active} onClick={() => void runClean()}><Play size={15} /> Run clean</button>
                 <button className="button-secondary" type="button" disabled={!scenario.active} onClick={stopScenario}><Square size={14} /> Stop</button>
               </div>
-              <p className="mt-3 text-xs text-muted" role="status">{message}</p>
-              <p className="mt-2 text-[10px] text-tertiary">“Run clean” always requires confirmation before the simulator-only backend reset.</p>
+              {message && <div className="event-card mt-3 p-3 text-xs" data-tone={message.startsWith('Unable') ? 'danger' : scenario.active ? 'success' : 'primary'} role="status"><span className="font-semibold">Status update</span><p className="mt-1 text-muted">{message}</p></div>}
+              <p className="mt-3 text-[10px] text-tertiary">“Run clean” always requires confirmation before the simulator-only backend reset.</p>
             </div>
           </section>
 
@@ -135,28 +137,34 @@ export function ScenarioLabPage() {
           </section>
 
           <section className="panel p-4">
-            <h2 className="eyebrow mb-3">Run state</h2>
+            <div className="mb-3 flex items-center justify-between"><h2 className="eyebrow">Run state</h2><span className="font-mono text-[10px] text-primary">{progress.toFixed(0)}%</span></div>
+            <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-surface-highest" aria-label={'Scenario progress ' + progress.toFixed(0) + '%'} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><div className={'h-full rounded-full transition-[width] duration-500 ' + (scenario.completed && !passed ? 'bg-danger' : 'bg-gradient-to-r from-primary-strong to-secondary')} style={{ width: progress + '%' }} /></div>
             <dl className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
-              <Stat label="Phase" value={scenario.phase} />
+              <Stat label="Phase" value={scenario.phase} tone={scenario.active ? 'success' : undefined} />
               <Stat label="Elapsed" value={scenario.elapsedRealS.toFixed(1) + ' / ' + definition.durationRealS + 's'} />
               <Stat label="Simulated clock" value={new Date(dashboard.simMs).toLocaleString()} />
-              <Stat label="Next event" value={String(scenario.nextEventIndex + 1) + ' / ' + definition.events.length} />
-              <Stat label="Tier-1" value={dashboard.tier1.enabled ? dashboard.tier1.status : 'disabled'} />
-              <Stat label="Tier-2" value={dashboard.tier2.enabled ? dashboard.tier2.status : 'disabled'} />
+              <Stat label="Next event" value={definition.events.length ? String(Math.min(scenario.nextEventIndex + 1, definition.events.length)) + ' / ' + definition.events.length : 'None'} tone={scenario.active && scenario.nextEventIndex < definition.events.length ? 'warning' : undefined} />
+              <Stat label="Tier-1" value={dashboard.tier1.enabled ? dashboard.tier1.status : 'disabled'} tone={dashboard.tier1.enabled ? 'primary' : undefined} />
+              <Stat label="Tier-2" value={dashboard.tier2.enabled ? dashboard.tier2.status : 'disabled'} tone={dashboard.tier2.enabled ? 'primary' : undefined} />
             </dl>
           </section>
 
           <section className="panel overflow-hidden">
-            <div className="panel-header"><h2 className="eyebrow">Injected disturbances</h2></div>
-            <div className="divide-y divide-outline">
-              {!definition.events.length && <p className="p-4 text-xs text-muted">No disturbance; the scenario observes healthy baseline behavior.</p>}
-              {definition.events.map((event, index) => <article className="flex gap-4 p-4" key={event.atSimS + event.label}><span className={'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ' + (scenario.nextEventIndex > index ? 'bg-secondary text-[#002016]' : 'bg-surface-highest text-muted')}>{index + 1}</span><div><p className="text-sm font-semibold">{event.phase} · +{event.atSimS}s simulated</p><p className="mt-1 text-xs text-muted">{event.label}</p></div></article>)}
+            <div className="panel-header flex items-center justify-between"><div><h2 className="eyebrow">Injected disturbances</h2><p className="mt-1 text-[10px] text-muted">Color shows completed, next, and scheduled events</p></div><span className="event-badge border-warning/30 bg-warning/10 text-warning">{definition.events.length} scheduled</span></div>
+            <div className="space-y-2 p-3">
+              {!definition.events.length && <div className="rounded-lg border border-secondary/20 bg-secondary/[.05] p-4 text-xs"><p className="font-semibold text-secondary">Healthy baseline</p><p className="mt-1 text-muted">No disturbance; the scenario observes normal behavior.</p></div>}
+              {definition.events.map((event, index) => {
+                const complete = scenario.nextEventIndex > index
+                const next = !scenario.completed && scenario.nextEventIndex === index
+                const tone = complete ? 'success' : next ? 'warning' : 'neutral'
+                return <article className="event-card flex gap-4 p-4" data-tone={tone} key={event.atSimS + event.label}><span className={'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ' + (complete ? 'bg-secondary text-[#002016]' : next ? 'bg-warning text-[#271600]' : 'bg-surface-highest text-muted')}>{complete ? <CheckCircle2 size={15} /> : index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">{event.phase} · +{event.atSimS}s simulated</p><span className={complete ? 'event-badge border-secondary/30 bg-secondary/10 text-secondary' : next ? 'event-badge border-warning/30 bg-warning/10 text-warning' : 'event-badge border-outline bg-surface-high text-muted'}>{complete ? 'Injected' : next ? (scenario.active ? 'Next' : 'Ready') : 'Scheduled'}</span></div><p className="mt-1 text-xs leading-5 text-muted">{event.label}</p></div></article>
+              })}
             </div>
           </section>
 
           <section className="panel overflow-hidden">
-            <div className="panel-header"><h2 className="eyebrow">Scenario timeline</h2></div>
-            <div className="thin-scrollbar max-h-52 overflow-y-auto divide-y divide-outline">{scenario.log.length ? scenario.log.map((entry, index) => <div className="p-3 text-xs" key={entry.timestamp + index}><time className="mr-3 font-mono text-[9px] text-muted">{new Date(entry.timestamp).toLocaleTimeString()}</time>{entry.message}</div>) : <p className="p-4 text-xs text-muted">Apply a scenario setup to start its timeline.</p>}</div>
+            <div className="panel-header flex items-center justify-between"><h2 className="eyebrow">Scenario timeline</h2>{scenario.log.length > 0 && <span className="event-badge border-primary/30 bg-primary/10 text-primary">{scenario.log.length} updates</span>}</div>
+            <div className="thin-scrollbar max-h-56 space-y-2 overflow-y-auto p-3" aria-live="polite">{scenario.log.length ? scenario.log.map((entry, index) => <div className={'relative rounded-lg border p-3 pl-5 text-xs ' + (index === 0 ? 'border-primary/30 bg-primary/[.06]' : 'border-outline/60 bg-surface-lowest')} key={entry.timestamp + index}><span className={'absolute left-2 top-4 h-1.5 w-1.5 rounded-full ' + (index === 0 ? 'bg-primary shadow-focus' : 'bg-muted')} /><div className="flex items-center justify-between gap-2"><time className="font-mono text-[9px] text-muted">{new Date(entry.timestamp).toLocaleTimeString()}</time>{index === 0 && <span className="event-badge border-primary/30 bg-primary/10 text-primary">Latest</span>}</div><p className="mt-1 leading-5">{entry.message}</p></div>) : <p className="rounded-lg border border-dashed border-outline p-4 text-xs text-muted">Apply a scenario setup to start its timeline.</p>}</div>
           </section>
         </div>
 
@@ -172,16 +180,16 @@ export function ScenarioLabPage() {
             </div>
           </section>
           <section className="panel p-4">
-            <h2 className="eyebrow mb-3">Actual observations</h2>
+            <div className="mb-3 flex items-center justify-between"><h2 className="eyebrow">Actual observations</h2><span className="event-badge border-primary/30 bg-primary/10 text-primary">Live counts</span></div>
             <div className="grid grid-cols-2 gap-2">
-              <Count label="T1 evaluations" value={scenario.observations.tier1Evaluations} />
-              <Count label="T1 situations" value={scenario.observations.tier1Situations.length} />
-              <Count label="T1 commands" value={scenario.observations.tier1Commands.length} />
-              <Count label="T2 branches" value={scenario.observations.tier2Branches.length} />
-              <Count label="T2 received" value={scenario.observations.tier2ActionsReceived.length} />
-              <Count label="T2 applied" value={scenario.observations.tier2ActionsApplied.length} />
-              <Count label="T2 blocked" value={scenario.observations.tier2ActionsBlocked.length} />
-              <Count label="Backend errors" value={scenario.observations.backendErrors.length} />
+              <Count label="T1 evaluations" value={scenario.observations.tier1Evaluations} tone="primary" />
+              <Count label="T1 situations" value={scenario.observations.tier1Situations.length} tone="warning" />
+              <Count label="T1 commands" value={scenario.observations.tier1Commands.length} tone="warning" />
+              <Count label="T2 branches" value={scenario.observations.tier2Branches.length} tone="primary" />
+              <Count label="T2 received" value={scenario.observations.tier2ActionsReceived.length} tone="primary" />
+              <Count label="T2 applied" value={scenario.observations.tier2ActionsApplied.length} tone="success" />
+              <Count label="T2 blocked" value={scenario.observations.tier2ActionsBlocked.length} tone="warning" />
+              <Count label="Backend errors" value={scenario.observations.backendErrors.length} tone="danger" />
             </div>
             {scenario.observations.tier1Situations.length > 0 && <p className="mt-3 break-words font-mono text-[10px] text-tertiary">T1: {scenario.observations.tier1Situations.join(', ')}</p>}
             {scenario.observations.tier2Branches.length > 0 && <p className="mt-2 break-words font-mono text-[10px] text-primary">T2: {scenario.observations.tier2Branches.join(', ')}</p>}
@@ -218,7 +226,13 @@ function SelectField({ label, value, options, onChange, disabled = false }: { la
   return <label><span className="field-label">{label}</span><select className="field-control" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option value={option} key={option}>{option.replaceAll('_', ' ')}</option>)}</select></label>
 }
 function ToggleField({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
-  return <label className="flex cursor-pointer items-center justify-between rounded border border-outline bg-surface-lowest p-3 text-xs"><span>{label}</span><input type="checkbox" role="switch" aria-label={label} checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /></label>
+  return <label className={'flex cursor-pointer items-center justify-between rounded-md border p-3 text-xs transition-colors ' + (checked ? 'border-secondary/35 bg-secondary/[.06]' : 'border-outline bg-surface-lowest')}><span>{label}</span><input type="checkbox" role="switch" aria-label={label} checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /></label>
 }
-function Stat({ label, value }: { label: string; value: string }) { return <div className="rounded bg-surface-lowest p-2"><dt className="text-[9px] font-bold uppercase text-muted">{label}</dt><dd className="mt-1 break-words font-mono text-[10px]">{value}</dd></div> }
-function Count({ label, value }: { label: string; value: number }) { return <div className="rounded bg-surface-lowest p-2 text-center"><strong className="block font-mono text-lg">{value}</strong><span className="text-[9px] uppercase text-muted">{label}</span></div> }
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'primary' | 'success' | 'warning' | 'danger' }) {
+  const valueClass = tone === 'danger' ? 'text-danger' : tone === 'warning' ? 'text-warning' : tone === 'success' ? 'text-secondary' : tone === 'primary' ? 'text-primary' : 'text-ink'
+  return <div className="metric-tile" data-tone={tone}><dt className="text-[9px] font-bold uppercase text-muted">{label}</dt><dd className={'mt-1 break-words font-mono text-[10px] ' + valueClass}>{value}</dd></div>
+}
+function Count({ label, value, tone }: { label: string; value: number; tone: 'primary' | 'success' | 'warning' | 'danger' }) {
+  const valueClass = value === 0 ? 'text-muted' : tone === 'danger' ? 'text-danger' : tone === 'warning' ? 'text-warning' : tone === 'success' ? 'text-secondary' : 'text-primary'
+  return <div className="metric-tile text-center" data-tone={value > 0 ? tone : undefined}><strong className={'block font-mono text-lg ' + valueClass}>{value}</strong><span className="text-[9px] uppercase text-muted">{label}</span></div>
+}
