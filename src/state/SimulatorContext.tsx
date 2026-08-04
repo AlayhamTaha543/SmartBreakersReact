@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { simulatorApi } from '../simulation/api'
 import { CHECKPOINT_KEY, cloneConfiguration, defaultBreakers, defaultConfiguration, freshObservations, loadStoredConfiguration, saveStoredConfiguration } from '../simulation/defaults'
 import { allowedWeather, buildBreakerStatuses, buildTelemetry, pickAutoWeather, stepPhysical, tier1Payload } from '../simulation/physics'
+import { CANONICAL_TIER2_ENGINE, tier2DecisionProvenance } from '../simulation/provenance'
 import { evaluateScenario } from '../simulation/scenarioEvaluator'
 import { scenarios } from '../simulation/scenarios'
 import type {
@@ -249,10 +250,11 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   const refreshState = useCallback(async () => {
     const state = await queueBackend(() => simulatorApi.state(configRef.current.connections.backendUrl, configRef.current.connections.organization))
     if (state.organization) organizationNameRef.current = state.organization.name
-    if (state.latest_decision?.engine && state.latest_decision.engine !== 'apps.kbs.services.run_cycle') throw new Error('Unexpected Tier-2 engine provenance')
+    const provenance = tier2DecisionProvenance(state.latest_decision)
     if (state.latest_decision) {
       tier2Ref.current.engine = state.latest_decision.engine
       tier2Ref.current.branch = state.latest_decision.branch
+      if (provenance === 'legacy') tier2Ref.current.status = 'legacy decision — detailed path unavailable'
       const weather = state.latest_decision.facts?.weather_condition
       backendWeatherRef.current = weather === undefined ? null : String(weather)
     }
@@ -308,7 +310,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
         scenarioRef.current.active && loadedDefinitionRef.current?.setup.backendOffline ? 'http://127.0.0.1:8999' : configRef.current.connections.backendUrl,
         configRef.current.connections.organization,
       ))
-      if (result.engine !== 'apps.kbs.services.run_cycle') throw new Error('Unexpected Tier-2 engine provenance')
+      if (result.engine !== CANONICAL_TIER2_ENGINE) throw new Error('Unexpected Tier-2 engine provenance')
       tier2Ref.current = { ...tier2Ref.current, connected: true, status: result.detail ?? 'cycle complete', engine: result.engine, branch: result.branch }
       if (result.branch) {
         observe('tier2_branch', result.branch)
