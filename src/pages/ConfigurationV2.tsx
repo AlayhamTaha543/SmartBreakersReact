@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowLeft, Database, RefreshCw, Save, Settings2, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { ThemeToggle } from '../components/ThemeToggle'
 import type { SimulatorConfiguration, SiteInputs, WeatherCondition } from '../simulation/types'
 import { useSimulator } from '../state/SimulatorContext'
 
@@ -31,7 +32,7 @@ export function ConfigurationV2() {
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3">
           <Link className="flex items-center gap-2 text-primary" to="/"><ArrowLeft size={18} /> Dashboard</Link>
           <div className="text-center"><h1 className="font-semibold">Physical Simulator & KBS Settings</h1><p className="text-[10px] uppercase text-muted">Backend-supported controls only</p></div>
-          <Link className="button-secondary" to="/scenarios">Scenario Lab</Link>
+          <div className="flex items-center gap-2"><ThemeToggle /><Link className="button-secondary" to="/scenarios">Scenario Lab</Link></div>
         </div>
       </header>
 

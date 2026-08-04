@@ -1,5 +1,6 @@
 import { AlertTriangle, Battery, Cloud, CloudFog, CloudLightning, CloudRain, Gauge, Grid3X3, Pause, Play, PlugZap, Sun, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { ThemeToggle } from '../components/ThemeToggle'
 import { breakerDrawW } from '../simulation/physics'
 import type { SimulatedBreaker, WeatherCondition } from '../simulation/types'
 import { useSimulator } from '../state/SimulatorContext'
@@ -25,6 +26,7 @@ function TopBar() {
         </div>
         <time className="data-value text-sm font-semibold sm:text-lg">{clock(dashboard.simMs)}</time>
         <nav className="flex items-center gap-2" aria-label="Simulator navigation">
+          <ThemeToggle />
           <Link className="button-secondary" to="/scenarios">Scenario Lab</Link>
           <Link className="button-secondary" to="/configuration">Configuration</Link>
           <button className="button-primary" type="button" onClick={toggleRunning}>
