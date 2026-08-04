@@ -8,6 +8,8 @@ interface BreakerVisual {
   tone: DeviceTone
 }
 
+// Shared by the dashboard and configuration views to keep device labels and SVGs consistent.
+// eslint-disable-next-line react-refresh/only-export-components
 export function breakerVisual(deviceId: string): BreakerVisual {
   const id = deviceId.toLowerCase()
   if (id.includes('server')) return { Icon: Server, label: 'Servers', tone: 'primary' }

@@ -1,5 +1,6 @@
 import { AlertTriangle, Battery, Cloud, CloudFog, CloudLightning, CloudRain, Gauge, Grid3X3, Pause, Play, PlugZap, Sun, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { BreakerDeviceIcon, breakerVisual } from '../components/BreakerDeviceIcon'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { breakerDrawW } from '../simulation/physics'
 import type { EvidenceEvent, SimulatedBreaker, WeatherCondition } from '../simulation/types'
@@ -93,6 +94,7 @@ function TierCard({ tier }: { tier: 'T1' | 'T2' }) {
 
 function BreakerCard({ breaker }: { breaker: SimulatedBreaker }) {
   const { dashboard, toggleBreaker } = useSimulator()
+  const visual = breakerVisual(breaker.deviceId)
   const draw = breakerDrawW(breaker, dashboard.simMs)
   const blocked = !breaker.switchOn && breaker.priorityType !== 'ac_grid' && Boolean(dashboard.tier1.situation)
   const attention = breaker.lockedOut || blocked ? 'danger' : breaker.countdownS > 0 ? 'warning' : breaker.switchOn ? 'success' : 'neutral'
@@ -110,11 +112,17 @@ function BreakerCard({ breaker }: { breaker: SimulatedBreaker }) {
     >
       <span className={'absolute inset-x-0 top-0 h-1 ' + accent} />
       <span className={'absolute right-3 top-4 h-2 w-2 rounded-full ' + (breaker.switchOn ? 'bg-secondary shadow-active' : attention === 'danger' ? 'bg-danger' : 'bg-muted')} />
-      <p className="font-mono text-[10px] uppercase text-muted">{breaker.priorityType} · P{breaker.priorityDegree}</p>
-      <h3 className="mt-1 font-semibold">{breaker.deviceId}</h3>
-      <div className="mt-4 flex items-end justify-between">
+      <div className="flex items-center gap-3 pr-4">
+        <BreakerDeviceIcon deviceId={breaker.deviceId} />
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold">{visual.label}</h3>
+          <p className="mt-0.5 truncate font-mono text-[9px] text-muted">{breaker.deviceId}</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-muted">{breaker.priorityType} · P{breaker.priorityDegree}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex items-end justify-between border-t border-outline/60 pt-3">
         <span className={breaker.switchOn ? 'eyebrow text-secondary' : 'eyebrow'}>{breaker.switchOn ? 'ON' : 'OFF'}</span>
-        <span className="data-value text-lg">{Math.round(draw)} W</span>
+        <span className="data-value text-xl font-semibold">{Math.round(draw)} <small className="text-xs text-muted">W</small></span>
       </div>
       {breaker.countdownS > 0 && <p className="mt-2 rounded bg-warning/10 px-2 py-1 text-xs font-semibold text-warning">OFF in {breaker.countdownS}s simulated</p>}
       {breaker.lockedOut && <p className="mt-2 rounded bg-danger/10 px-2 py-1 text-xs font-semibold text-danger">Lockout: {breaker.lockoutReason}</p>}
@@ -149,8 +157,9 @@ export function DashboardV2() {
   return (
     <div className="min-h-screen bg-surface text-ink">
       <TopBar />
-      <main className="mx-auto grid max-w-[1800px] gap-3 p-3 xl:grid-cols-[1fr_1.55fr_1fr]">
+      <main className="mx-auto grid max-w-[1920px] gap-3 p-3 xl:grid-cols-[280px_minmax(0,1.8fr)_minmax(330px,0.9fr)]">
         <div className="grid content-start gap-3">
+          <section className="grid gap-3"><TierCard tier="T1" /><TierCard tier="T2" /></section>
           {dashboard.climateError && (
             <section className="panel border-danger/60 p-4" role="alert">
               <div className="flex gap-3"><AlertTriangle className="shrink-0 text-danger" />
@@ -158,34 +167,27 @@ export function DashboardV2() {
               </div>
             </section>
           )}
-          <section className="panel p-4">
-            <div className="flex items-start justify-between">
-              <div><p className="eyebrow">CSV climate environment</p><h2 className="mt-1 text-2xl font-semibold">{configuration.site.city}</h2>
-                <span className="mt-2 inline-block rounded bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">{dashboard.weatherMode}</span>
+          <section className="panel overflow-hidden">
+            <div className="flex items-center justify-between gap-3 p-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><WeatherIcon size={24} /></span>
+                <div className="min-w-0"><p className="eyebrow">CSV climate environment</p><h2 className="truncate text-lg font-semibold">{configuration.site.city}</h2></div>
               </div>
-              <div className="text-right"><WeatherIcon className="ml-auto text-primary" size={36} /><p className="mt-2 text-xs font-bold uppercase">{dashboard.weather.replace('_', ' ')}</p></div>
+              <div className="text-right"><span className="event-badge border-primary/30 bg-primary/10 text-primary">{dashboard.weatherMode}</span><p className="mt-1 text-[10px] font-bold uppercase text-muted">{dashboard.weather.replace('_', ' ')}</p></div>
             </div>
-            {row && <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-              <Reading label="Typical" value={row.typical_weather.replace('_', ' ')} />
-              <Reading label="Season" value={row.season} />
-              <Reading label="Temperature" value={row.temp_C.toFixed(1) + ' °C'} />
-              <Reading label="Humidity" value={row.humidity_percent.toFixed(1) + '%'} />
-              <Reading label="Cloud" value={row.cloud_amount_percent.toFixed(1) + '%'} />
-              <Reading label="Rain" value={row.precip_mm_day.toFixed(2) + ' mm/day'} />
-              <Reading label="GHI" value={row.ghi_kwh_m2_day.toFixed(2) + ' kWh/m²/day'} />
-              <Reading label="Clear-sky GHI" value={row.clearsky_ghi_kwh_m2_day.toFixed(2)} />
+            {row && <div className="grid grid-cols-3 border-y border-outline bg-surface-lowest">
+              <ClimateMetric label="Temperature" value={row.temp_C.toFixed(1) + ' °C'} />
+              <ClimateMetric label="Humidity" value={row.humidity_percent.toFixed(0) + '%'} />
+              <ClimateMetric label="Solar GHI" value={row.ghi_kwh_m2_day.toFixed(1)} unit="kWh/m²" />
             </div>}
-            <div className="mt-3 rounded bg-surface-lowest p-3 text-xs">
-              <p className="eyebrow">Separate Tier-2 fact</p>
-              <p className="mt-1 font-mono text-primary">weather_condition = {dashboard.backendWeatherCondition ?? 'not reported'}</p>
-            </div>
+            {row && <p className="px-3 py-2 text-[10px] leading-4 text-muted"><span className="font-semibold text-ink">{row.season}</span> · {row.cloud_amount_percent.toFixed(0)}% cloud · {row.precip_mm_day.toFixed(1)} mm rain · clear-sky {row.clearsky_ghi_kwh_m2_day.toFixed(1)}</p>}
+            <div className="flex items-center justify-between gap-2 border-t border-outline px-3 py-2 text-[10px]"><span className="text-muted">Tier-2 weather fact</span><span className="truncate font-mono text-primary">{dashboard.backendWeatherCondition ?? 'not reported'}</span></div>
           </section>
-          <section className="grid grid-cols-2 gap-3"><TierCard tier="T1" /><TierCard tier="T2" /></section>
         </div>
 
-        <div className="grid content-start gap-3">
+        <div className="grid min-w-0 content-start gap-3">
           <section className="panel p-4">
-            <div className="mb-4 flex items-center justify-between"><h2 className="eyebrow">Physical power flow</h2><span className={'event-badge ' + sourceBadge}><Zap size={11} className="mr-1" />{source}</span></div>
+            <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold">Physical power flow</h2><span className={'event-badge ' + sourceBadge}><Zap size={11} className="mr-1" />{source}</span></div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Power label="PV adjusted" value={flow?.pvW ?? 0} icon={Sun} tone="success" />
               <Power label="PV clear sky" value={flow?.clearSkyW ?? 0} icon={Zap} tone="primary" />
@@ -201,8 +203,8 @@ export function DashboardV2() {
           </section>
 
           <section className="panel p-4">
-            <div className="mb-4 flex items-center justify-between"><h2 className="eyebrow">Breaker panel · manual control</h2><span className="text-[10px] uppercase text-muted">{dashboard.breakers.filter((item) => item.switchOn).length} active</span></div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">{dashboard.breakers.map((breaker) => <BreakerCard breaker={breaker} key={breaker.deviceId} />)}</div>
+            <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold">Breaker panel · manual control</h2><span className="text-[10px] uppercase text-muted">{dashboard.breakers.filter((item) => item.switchOn).length} active</span></div>
+            <div className="grid grid-cols-2 gap-3 2xl:grid-cols-3">{dashboard.breakers.map((breaker) => <BreakerCard breaker={breaker} key={breaker.deviceId} />)}</div>
           </section>
 
           <section className="panel p-4"><div className="flex items-center justify-between"><h2 className="eyebrow">Live PV history</h2><span className="font-mono text-[10px] text-muted">{dashboard.pvHistory.length}/96 samples</span></div><History values={dashboard.pvHistory} /></section>
@@ -246,9 +248,12 @@ export function DashboardV2() {
 
 function Reading({ label, value, tone }: { label: string; value: string; tone?: 'primary' | 'success' | 'warning' | 'danger' }) {
   const valueClass = tone === 'danger' ? 'text-danger' : tone === 'warning' ? 'text-warning' : tone === 'success' ? 'text-secondary' : tone === 'primary' ? 'text-primary' : 'text-ink'
-  return <div className="metric-tile" data-tone={tone}><span className="block text-[9px] font-bold uppercase tracking-wider text-muted">{label}</span><strong className={'mt-1 block truncate font-mono text-xs ' + valueClass} title={value}>{value}</strong></div>
+  return <div className="metric-tile p-3" data-tone={tone}><span className="block text-[10px] font-bold uppercase tracking-wider text-muted">{label}</span><strong className={'mt-1.5 block truncate font-mono text-sm ' + valueClass} title={value}>{value}</strong></div>
 }
 function Power({ label, value, icon: Icon, tone }: { label: string; value: number; icon: typeof Battery; tone: AccentTone | 'solar' }) {
   const iconClass = tone === 'success' ? 'text-secondary' : tone === 'primary' ? 'text-primary' : tone === 'tertiary' ? 'text-tertiary' : tone === 'solar' ? 'text-warning' : tone === 'danger' ? 'text-danger' : 'text-muted'
-  return <div className="power-card" data-tone={tone}><div className={'inline-flex rounded-md bg-surface-container p-2 ' + iconClass}><Icon size={17} /></div><span className="mt-3 block text-[9px] font-bold uppercase text-muted">{label}</span><strong className="data-value mt-1 block text-lg">{Math.round(value)} <small className="text-[10px] text-muted">W</small></strong></div>
+  return <div className="power-card p-4" data-tone={tone}><div className={'inline-flex rounded-md bg-surface-container p-2 ' + iconClass}><Icon size={20} /></div><span className="mt-3 block text-[11px] font-bold uppercase leading-4 tracking-wide text-muted">{label}</span><strong className="data-value mt-1 block text-2xl font-semibold">{Math.round(value)} <small className="text-xs font-medium text-muted">W</small></strong></div>
+}
+function ClimateMetric({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  return <div className="border-r border-outline px-2 py-2.5 text-center last:border-r-0"><span className="block text-[9px] font-bold uppercase tracking-wider text-muted">{label}</span><strong className="mt-1 block font-mono text-sm text-ink">{value} {unit && <small className="text-[8px] text-muted">{unit}</small>}</strong></div>
 }
