@@ -79,4 +79,40 @@ describe('closed-loop React surfaces', () => {
     expect(screen.getAllByText('T1 · normal operation')).toHaveLength(2)
     expect(screen.getByText('T1 + T2 · danger clears and control returns')).toBeInTheDocument()
   })
+
+  it('persists the light-mode choice', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderApp()
+    const toggle = await screen.findByRole('button', { name: 'Switch to light mode' })
+    await user.click(toggle)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(localStorage.getItem('smartbreaker:theme')).toBe('light')
+
+    unmount()
+    renderApp()
+    expect(await screen.findByRole('button', { name: 'Switch to dark mode' })).toBeInTheDocument()
+  })
+
+  it('edits scenario setup and shows the changed battery voltage immediately', async () => {
+    const user = userEvent.setup()
+    renderApp('/scenarios')
+    await screen.findByText('6 Tier‑1 · 8 Tier‑2 · 3 integrated')
+    await user.click(screen.getByRole('button', { name: /T1 · battery critical/ }))
+    expect(await screen.findAllByText('T1 · battery critical')).toHaveLength(2)
+
+    const voltage = await screen.findByRole('spinbutton', { name: /Critical-event battery voltage/ })
+    expect(voltage).toHaveValue(24.05)
+    await user.clear(voltage)
+    await user.type(voltage, '23.75')
+    expect(voltage).toHaveValue(23.75)
+    expect(screen.getByText('23.75 V')).toBeInTheDocument()
+    expect(screen.getByText('Battery voltage changes to tester target: 23.75 V')).toBeInTheDocument()
+
+    const scale = screen.getByRole('spinbutton', { name: /^Clock scale/ })
+    await user.clear(scale)
+    await user.type(scale, '120')
+    expect(scale).toHaveValue(120)
+    await user.click(screen.getByRole('button', { name: 'Apply setup' }))
+    expect(screen.getByRole('button', { name: 'Run clean' })).toBeEnabled()
+  })
 })

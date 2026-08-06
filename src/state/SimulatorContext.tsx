@@ -2,11 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { simulatorApi } from '../simulation/api'
 import { CHECKPOINT_KEY, cloneConfiguration, defaultBreakers, defaultConfiguration, freshObservations, loadStoredConfiguration, saveStoredConfiguration } from '../simulation/defaults'
 import { allowedWeather, buildBreakerStatuses, buildTelemetry, pickAutoWeather, stepPhysical, tier1Payload } from '../simulation/physics'
+import { CANONICAL_TIER2_ENGINE, tier2DecisionProvenance } from '../simulation/provenance'
 import { evaluateScenario } from '../simulation/scenarioEvaluator'
 import { scenarios } from '../simulation/scenarios'
 import type {
   ClimateRow, Countdown, DashboardSnapshot, EvidenceEvent, EvidenceTier, KBSAction,
-  KBSAlert, PhysicalState, ScenarioRuntime, SimulationCheckpoint, SimulatorConfiguration,
+  KBSAlert, PhysicalState, ScenarioDefinition, ScenarioRuntime, ScenarioSetup, SimulationCheckpoint, SimulatorConfiguration,
   TierRuntimeState,
 } from '../simulation/types'
 
@@ -18,6 +19,7 @@ interface SimulatorContextValue {
   loading: boolean
   running: boolean
   scenario: ScenarioRuntime
+  scenarioDefinition: ScenarioDefinition
   saveConfiguration: (next: SimulatorConfiguration) => Promise<void>
   resetConfiguration: () => void
   reloadClimate: () => Promise<void>
@@ -28,7 +30,8 @@ interface SimulatorContextValue {
   loadScenario: (id: string) => void
   startScenario: (clean: boolean) => Promise<void>
   stopScenario: () => void
-  setScenarioBatteryVoltage: (voltage: number) => void
+  updateScenarioSetup: (patch: Partial<ScenarioSetup>) => void
+  setScenarioBatteryVoltage: (voltage: number | undefined) => void
 }
 
 const initialTier = (enabled = false): TierRuntimeState => ({
@@ -53,6 +56,9 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   const runningRef = useRef(true)
   const [scenario, setScenario] = useState<ScenarioRuntime>(initialScenario)
   const scenarioRef = useRef(scenario)
+  const [scenarioDefinition, setScenarioDefinition] = useState<ScenarioDefinition>(() => structuredClone(scenarios[0]))
+  const selectedDefinitionRef = useRef<ScenarioDefinition>(scenarioDefinition)
+  const loadedDefinitionRef = useRef<ScenarioDefinition | null>(null)
   const [dashboard, setDashboard] = useState<DashboardSnapshot>(() => ({
     simMs: new Date(configuration.site.localDateTime).getTime(), running: true,
     organization: 'Organization ' + configuration.connections.organization,
@@ -154,7 +160,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     else if (kind === 'tier2_blocked') observations.tier2ActionsBlocked.push(value as KBSAction)
     else if (kind === 'tier2_alert') observations.tier2Alerts.push(value as KBSAlert)
     else if (kind === 'backend_error') observations.backendErrors.push(String(value))
-    const definition = scenarios.find((item) => item.id === runtime.loadedId)
+    const definition = loadedDefinitionRef.current?.id === runtime.loadedId ? loadedDefinitionRef.current : null
     runtime.results = definition ? evaluateScenario(definition.expectations, observations, physicalRef.current.breakers) : []
     setScenario({ ...runtime, observations: { ...observations }, results: [...runtime.results] })
   }, [])
@@ -244,10 +250,11 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   const refreshState = useCallback(async () => {
     const state = await queueBackend(() => simulatorApi.state(configRef.current.connections.backendUrl, configRef.current.connections.organization))
     if (state.organization) organizationNameRef.current = state.organization.name
-    if (state.latest_decision?.engine && state.latest_decision.engine !== 'apps.kbs.services.run_cycle') throw new Error('Unexpected Tier-2 engine provenance')
+    const provenance = tier2DecisionProvenance(state.latest_decision)
     if (state.latest_decision) {
       tier2Ref.current.engine = state.latest_decision.engine
       tier2Ref.current.branch = state.latest_decision.branch
+      if (provenance === 'legacy') tier2Ref.current.status = 'legacy decision — detailed path unavailable'
       const weather = state.latest_decision.facts?.weather_condition
       backendWeatherRef.current = weather === undefined ? null : String(weather)
     }
@@ -300,10 +307,10 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     tier2BusyRef.current = true
     try {
       const result = await queueBackend(() => simulatorApi.runCycle(
-        scenarioRef.current.active && scenarios.find((item) => item.id === scenarioRef.current.loadedId)?.setup.backendOffline ? 'http://127.0.0.1:8999' : configRef.current.connections.backendUrl,
+        scenarioRef.current.active && loadedDefinitionRef.current?.setup.backendOffline ? 'http://127.0.0.1:8999' : configRef.current.connections.backendUrl,
         configRef.current.connections.organization,
       ))
-      if (result.engine !== 'apps.kbs.services.run_cycle') throw new Error('Unexpected Tier-2 engine provenance')
+      if (result.engine !== CANONICAL_TIER2_ENGINE) throw new Error('Unexpected Tier-2 engine provenance')
       tier2Ref.current = { ...tier2Ref.current, connected: true, status: result.detail ?? 'cycle complete', engine: result.engine, branch: result.branch }
       if (result.branch) {
         observe('tier2_branch', result.branch)
@@ -324,7 +331,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     if (!flow || pushBusyRef.current || !tier2Ref.current.enabled) return
     pushBusyRef.current = true
     try {
-      const baseUrl = scenarioRef.current.active && scenarios.find((item) => item.id === scenarioRef.current.loadedId)?.setup.backendOffline ? 'http://127.0.0.1:8999' : configRef.current.connections.backendUrl
+      const baseUrl = scenarioRef.current.active && loadedDefinitionRef.current?.setup.backendOffline ? 'http://127.0.0.1:8999' : configRef.current.connections.backendUrl
       await queueBackend(() => simulatorApi.push(baseUrl,
         buildTelemetry(flow, configRef.current.site, configRef.current.connections.organization, physicalRef.current.simMs),
         buildBreakerStatuses(physicalRef.current.breakers, physicalRef.current.simMs)))
@@ -347,7 +354,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
         physicalRef.current.simMs += realDtS * configRef.current.site.scale * 1000
         const runtime = scenarioRef.current
         if (runtime.active) {
-          const definition = scenarios.find((item) => item.id === runtime.loadedId)
+          const definition = loadedDefinitionRef.current?.id === runtime.loadedId ? loadedDefinitionRef.current : null
           const elapsedSimS = (physicalRef.current.simMs - runtime.startedSimMs) / 1000
           while (definition && runtime.nextEventIndex < definition.events.length && elapsedSimS >= definition.events[runtime.nextEventIndex].atSimS) {
             const event = definition.events[runtime.nextEventIndex]
@@ -400,7 +407,8 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
         lastTier1Ref.current = realNow
         void evaluateTier1()
       }
-      if (tier2Ref.current.enabled && realNow - lastPushRef.current >= 1000) {
+      const pushIntervalMs = (scenarioRef.current.active ? loadedDefinitionRef.current?.setup.pushIntervalS ?? 1 : 1) * 1000
+      if (tier2Ref.current.enabled && realNow - lastPushRef.current >= pushIntervalMs) {
         lastPushRef.current = realNow
         void pushTelemetry()
       }
@@ -485,13 +493,43 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   }, [applySwitch, evidence, publish, queueBackend])
 
   const selectScenario = useCallback((id: string) => {
-    scenarioRef.current.selectedId = id
-    setScenario({ ...scenarioRef.current })
+    const definition = scenarios.find((item) => item.id === id)
+    if (!definition) return
+    const selected = structuredClone(definition)
+    selectedDefinitionRef.current = selected
+    setScenarioDefinition(selected)
+    scenarioRef.current = { ...scenarioRef.current, selectedId: id }
+    setScenario(scenarioRef.current)
+  }, [])
+
+  const updateScenarioSetup = useCallback((patch: Partial<ScenarioSetup>) => {
+    const next = structuredClone(selectedDefinitionRef.current)
+    next.setup = {
+      ...next.setup,
+      ...patch,
+      overrides: patch.overrides ? { ...next.setup.overrides, ...patch.overrides } : next.setup.overrides,
+    }
+    selectedDefinitionRef.current = next
+    setScenarioDefinition(next)
+    if (scenarioRef.current.loadedId === next.id) {
+      loadedDefinitionRef.current = null
+      scenarioRef.current = {
+        ...scenarioRef.current, loadedId: null, active: false, completed: false,
+        phase: 'SETUP EDITED · APPLY REQUIRED', results: [],
+      }
+      setScenario(scenarioRef.current)
+    }
   }, [])
 
   const loadScenario = useCallback((id: string) => {
-    const definition = scenarios.find((item) => item.id === id)
-    if (!definition) return
+    const source = selectedDefinitionRef.current.id === id
+      ? selectedDefinitionRef.current
+      : scenarios.find((item) => item.id === id)
+    if (!source) return
+    const definition = structuredClone(source)
+    loadedDefinitionRef.current = definition
+    selectedDefinitionRef.current = structuredClone(definition)
+    setScenarioDefinition(selectedDefinitionRef.current)
     const setup = definition.setup
     const next = cloneConfiguration(configRef.current)
     next.site = {
@@ -528,7 +566,9 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   }, [publish, reinitialize])
 
   const startScenario = useCallback(async (clean: boolean) => {
-    const definition = scenarios.find((item) => item.id === scenarioRef.current.loadedId)
+    const definition = loadedDefinitionRef.current?.id === scenarioRef.current.loadedId
+      ? loadedDefinitionRef.current
+      : null
     if (!definition) throw new Error('Load a scenario first')
     if (clean) await queueBackend(() => simulatorApi.reset(configRef.current.connections.backendUrl, configRef.current.connections.organization))
     if (definition.setup.tier2) {
@@ -579,27 +619,48 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     setTierEnabled('T2', false)
   }, [setTierEnabled])
 
-  const setScenarioBatteryVoltage = useCallback((voltage: number) => {
-    const definition = scenarios.find((item) => item.id === scenarioRef.current.loadedId)
-    if (!definition?.batteryControl) return
-    if (definition.batteryControl.source === 'event') {
-      const index = definition.batteryControl.eventIndex ?? 0
-      const event = definition.events[index]
-      if (event) event.changes.overrides = { ...event.changes.overrides, batteryVoltageV: voltage }
-    } else {
-      physicalRef.current.overrides.batteryVoltageV = voltage
-      scenarioRef.current.overrides.batteryVoltageV = voltage
+  const setScenarioBatteryVoltage = useCallback((voltage: number | undefined) => {
+    const withVoltage = (source: ScenarioDefinition) => {
+      const definition = structuredClone(source)
+      if (definition.batteryControl?.source === 'event') {
+        const index = definition.batteryControl.eventIndex ?? 0
+        const event = definition.events[index]
+        if (event) {
+          event.changes.overrides = { ...event.changes.overrides, batteryVoltageV: voltage }
+          if (definition.batteryControl.eventLabel && voltage !== undefined) {
+            event.label = definition.batteryControl.eventLabel + ': ' + voltage + ' V'
+          }
+        }
+      } else {
+        definition.setup.overrides = { ...definition.setup.overrides, batteryVoltageV: voltage }
+      }
+      return definition
     }
-    setScenario({ ...scenarioRef.current, overrides: { ...scenarioRef.current.overrides } })
-  }, [])
+
+    const selected = withVoltage(selectedDefinitionRef.current)
+    selectedDefinitionRef.current = selected
+    setScenarioDefinition(selected)
+
+    if (scenarioRef.current.loadedId === selected.id && loadedDefinitionRef.current) {
+      const loaded = withVoltage(loadedDefinitionRef.current)
+      loadedDefinitionRef.current = loaded
+      if (loaded.batteryControl?.source !== 'event') {
+        if (voltage === undefined) delete physicalRef.current.overrides.batteryVoltageV
+        else physicalRef.current.overrides.batteryVoltageV = voltage
+        scenarioRef.current.overrides = { ...scenarioRef.current.overrides, batteryVoltageV: voltage }
+      }
+      setScenario({ ...scenarioRef.current, overrides: { ...scenarioRef.current.overrides } })
+      publish()
+    }
+  }, [publish])
 
   return (
     <SimulatorContext.Provider value={{
-      configuration, dashboard, climateRows, cities, loading, running, scenario,
+      configuration, dashboard, climateRows, cities, loading, running, scenario, scenarioDefinition,
       saveConfiguration, resetConfiguration, reloadClimate,
       toggleRunning() { runningRef.current = !runningRef.current; setRunning(runningRef.current); publish() },
       setTierEnabled, toggleBreaker, selectScenario, loadScenario, startScenario,
-      stopScenario, setScenarioBatteryVoltage,
+      stopScenario, updateScenarioSetup, setScenarioBatteryVoltage,
     }}>
       {children}
     </SimulatorContext.Provider>

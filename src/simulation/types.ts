@@ -119,8 +119,18 @@ export interface KBSAction {
   reason: string; branch: string; created_at: string
 }
 export interface KBSAlert { kind: string; severity: 'info' | 'warning' | 'critical'; message: string; created_at: string }
+export type Tier2DecisionEngine =
+  | 'apps.kbs.services.run_cycle'
+  | 'apps.kbs.engine.rules.decide'
+  | 'legacy.apps.kbs.services.run_cycle'
 export interface KBSDecision {
-  engine: 'apps.kbs.services.run_cycle'; branch: string | null; created_at?: string
+  engine: Tier2DecisionEngine; branch: string | null; created_at?: string
+  event_id?: string; tier?: 'tier2'; trace_version?: number; legacy?: boolean
+  occurred_at?: string; received_at?: string
+  trace?: Array<{
+    code: string; kind: string; outcome: string; summary: string
+    evidence: Record<string, unknown>
+  }>
   facts: Record<string, unknown> | null; actions?: KBSAction[]; detail?: string
 }
 export interface KBSStateDTO {

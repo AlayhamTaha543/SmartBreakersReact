@@ -3,11 +3,60 @@
 @tailwind utilities;
 
 :root {
-  color: #e0e2f0;
-  background: #10131d;
+  --color-surface: 16 19 29;
+  --color-surface-lowest: 11 14 23;
+  --color-surface-low: 24 27 37;
+  --color-surface-container: 26 29 39;
+  --color-surface-high: 39 42 52;
+  --color-surface-highest: 49 52 63;
+  --color-primary: 173 198 255;
+  --color-primary-strong: 77 142 255;
+  --color-secondary: 69 223 164;
+  --color-tertiary: 255 179 173;
+  --color-danger: 255 107 101;
+  --color-warning: 245 158 11;
+  --color-outline: 66 71 84;
+  --color-muted: 194 198 214;
+  --color-ink: 224 226 240;
+  --color-on-primary: 0 28 68;
+  --body-accent-primary: 77 142 255;
+  --body-accent-secondary: 69 223 164;
+  --focus-ring: 173 198 255;
+  --placeholder: 111 116 132;
+  --outline-hover: 91 97 112;
+  --scrollbar: 66 71 84;
+  --theme-color-scheme: dark;
+  color: rgb(var(--color-ink));
+  background: rgb(var(--color-surface));
   font-family: Inter, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme='light'] {
+  --color-surface: 246 248 252;
+  --color-surface-lowest: 255 255 255;
+  --color-surface-low: 238 242 248;
+  --color-surface-container: 255 255 255;
+  --color-surface-high: 228 234 243;
+  --color-surface-highest: 214 222 234;
+  --color-primary: 25 91 184;
+  --color-primary-strong: 73 130 220;
+  --color-secondary: 0 125 88;
+  --color-tertiary: 167 57 75;
+  --color-danger: 190 45 43;
+  --color-warning: 174 99 0;
+  --color-outline: 190 199 212;
+  --color-muted: 79 90 108;
+  --color-ink: 26 34 48;
+  --color-on-primary: 255 255 255;
+  --body-accent-primary: 73 130 220;
+  --body-accent-secondary: 0 150 104;
+  --focus-ring: 25 91 184;
+  --placeholder: 111 122 140;
+  --outline-hover: 128 143 164;
+  --scrollbar: 153 165 181;
+  --theme-color-scheme: light;
 }
 
 * {
@@ -17,7 +66,7 @@
 html {
   min-width: 320px;
   min-height: 100%;
-  background: #10131d;
+  background: rgb(var(--color-surface));
 }
 
 body {
@@ -25,9 +74,9 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 90% 2%, rgba(77, 142, 255, 0.05), transparent 30rem),
-    radial-gradient(circle at 5% 95%, rgba(69, 223, 164, 0.035), transparent 28rem),
-    #10131d;
+    radial-gradient(circle at 88% 0%, rgb(var(--body-accent-primary) / 0.1), transparent 34rem),
+    radial-gradient(circle at 4% 92%, rgb(var(--body-accent-secondary) / 0.07), transparent 30rem),
+    rgb(var(--color-surface));
 }
 
 button,
@@ -44,16 +93,16 @@ select {
 }
 
 :focus-visible {
-  box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.22);
+  box-shadow: 0 0 0 3px rgb(var(--focus-ring) / 0.22);
 }
 
 @layer components {
   .panel {
-    @apply rounded border border-outline bg-[#1a1d27];
+    @apply rounded-lg border border-outline bg-surface-container shadow-sm;
   }
 
   .panel-header {
-    @apply border-b border-outline bg-surface-low px-4 py-3;
+    @apply border-b border-outline bg-gradient-to-r from-surface-low to-surface-container px-4 py-3;
   }
 
   .eyebrow {
@@ -69,16 +118,24 @@ select {
   }
 
   .field-control {
-    @apply w-full rounded-sm border border-outline bg-surface-lowest px-2 py-2 text-sm text-ink transition-colors placeholder:text-[#6f7484] hover:border-[#5b6170] focus:border-primary;
-    color-scheme: dark;
+    @apply w-full rounded-md border border-outline bg-surface-lowest px-2 py-2 text-sm text-ink transition-colors focus:border-primary;
+    color-scheme: var(--theme-color-scheme);
+  }
+
+  .field-control::placeholder {
+    color: rgb(var(--placeholder));
+  }
+
+  .field-control:hover {
+    border-color: rgb(var(--outline-hover));
   }
 
   .button-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded bg-primary-strong px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-[#001c44] transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-primary-strong px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-on-primary shadow-sm transition hover:-translate-y-px hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .button-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded border border-outline bg-surface-high px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink transition hover:border-primary hover:text-primary active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-outline bg-surface-high px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink transition hover:-translate-y-px hover:border-primary hover:text-primary active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .button-ghost {
@@ -86,12 +143,116 @@ select {
   }
 
   .icon-button {
-    @apply inline-flex h-9 w-9 items-center justify-center rounded text-muted transition hover:bg-surface-high hover:text-primary;
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition hover:bg-surface-high hover:text-primary;
+  }
+
+  .metric-tile {
+    @apply rounded-md border border-transparent bg-surface-lowest p-2 transition-colors;
+  }
+
+  .power-card {
+    @apply relative overflow-hidden rounded-lg border border-outline bg-surface-lowest p-3;
+    background-image: linear-gradient(145deg, rgb(var(--card-accent) / 0.1), transparent 58%);
+  }
+
+  .power-card::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: rgb(var(--card-accent));
+    content: "";
+  }
+
+  .event-card {
+    @apply relative overflow-hidden rounded-lg border border-outline bg-surface-lowest;
+    background-image: linear-gradient(110deg, rgb(var(--event-accent) / 0.09), transparent 45%);
+    animation: event-arrival 550ms ease-out both;
+  }
+
+  .event-card::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: rgb(var(--event-accent));
+    content: "";
+  }
+
+  .event-badge {
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider;
+  }
+}
+
+.power-card[data-tone="solar"],
+.event-card[data-tone="warning"] {
+  --card-accent: var(--color-warning);
+  --event-accent: var(--color-warning);
+}
+
+.power-card[data-tone="success"],
+.event-card[data-tone="success"] {
+  --card-accent: var(--color-secondary);
+  --event-accent: var(--color-secondary);
+}
+
+.power-card[data-tone="primary"],
+.event-card[data-tone="primary"] {
+  --card-accent: var(--color-primary-strong);
+  --event-accent: var(--color-primary-strong);
+}
+
+.power-card[data-tone="tertiary"],
+.event-card[data-tone="tertiary"] {
+  --card-accent: var(--color-tertiary);
+  --event-accent: var(--color-tertiary);
+}
+
+.power-card[data-tone="danger"],
+.event-card[data-tone="danger"] {
+  --card-accent: var(--color-danger);
+  --event-accent: var(--color-danger);
+}
+
+.power-card[data-tone="neutral"],
+.event-card[data-tone="neutral"] {
+  --card-accent: var(--color-muted);
+  --event-accent: var(--color-outline);
+}
+
+.metric-tile[data-tone="primary"] {
+  border-color: rgb(var(--color-primary-strong) / 0.28);
+  background: rgb(var(--color-primary-strong) / 0.07);
+}
+
+.metric-tile[data-tone="success"] {
+  border-color: rgb(var(--color-secondary) / 0.28);
+  background: rgb(var(--color-secondary) / 0.07);
+}
+
+.metric-tile[data-tone="warning"] {
+  border-color: rgb(var(--color-warning) / 0.3);
+  background: rgb(var(--color-warning) / 0.07);
+}
+
+.metric-tile[data-tone="danger"] {
+  border-color: rgb(var(--color-danger) / 0.32);
+  background: rgb(var(--color-danger) / 0.08);
+}
+
+@keyframes event-arrival {
+  from {
+    box-shadow: 0 0 0 1px rgb(var(--event-accent) / 0.36), 0 0 24px rgb(var(--event-accent) / 0.16);
+    opacity: 0.72;
+    transform: translateY(-3px);
+  }
+  to {
+    box-shadow: none;
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 .thin-scrollbar {
-  scrollbar-color: #424754 transparent;
+  scrollbar-color: rgb(var(--scrollbar)) transparent;
   scrollbar-width: thin;
 }
 
@@ -102,7 +263,7 @@ select {
 
 .thin-scrollbar::-webkit-scrollbar-thumb {
   border-radius: 99px;
-  background: #424754;
+  background: rgb(var(--scrollbar));
 }
 
 .status-dot {
