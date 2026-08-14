@@ -1,12 +1,23 @@
 import { ArrowLeft, Battery, CheckCircle2, Circle, FlaskConical, Play, RotateCcw, Square, XCircle } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { FuzzyDecisionFlow } from '../components/FuzzyDecisionFlow'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { cycleTiming } from '../simulation/cycleTiming'
 import { scenarios } from '../simulation/scenarios'
-import type { ScenarioDefinition, SensorOverrides, WeatherCondition } from '../simulation/types'
+import type { FuzzyDecisionCycle, ScenarioDefinition, ScenarioMetrics, SensorOverrides, Tier2Policy, WeatherCondition } from '../simulation/types'
 import { useSimulator } from '../state/SimulatorContext'
 
 const weatherOptions: WeatherCondition[] = ['sunny', 'partly_cloudy', 'cloudy', 'rainy', 'storm', 'foggy']
+const metricRows: Array<{ key: keyof ScenarioMetrics; label: string; unit: string }> = [
+  { key: 'gridImportWh', label: 'Grid import', unit: 'Wh' },
+  { key: 'minimumBatterySocPercent', label: 'Minimum battery SOC', unit: '%' },
+  { key: 'timeBelowReserveS', label: 'Time below reserve', unit: 'sim s' },
+  { key: 'optionalLoadServedWh', label: 'Optional-load service', unit: 'Wh' },
+  { key: 'mandatoryOffCommands', label: 'Mandatory OFF commands', unit: '' },
+  { key: 'actionCount', label: 'Action count', unit: '' },
+  { key: 'commandReversals', label: 'Command reversals', unit: '' },
+]
 
 function batteryVoltageFor(definition: ScenarioDefinition) {
   const control = definition.batteryControl
@@ -16,15 +27,74 @@ function batteryVoltageFor(definition: ScenarioDefinition) {
   return definition.setup.overrides?.batteryVoltageV
 }
 
+function ScenarioFuzzyCycleHistory({
+  cycles,
+  policy,
+}: {
+  cycles: FuzzyDecisionCycle[]
+  policy: Tier2Policy
+}) {
+  const latestDecisionId = cycles.at(-1)?.decisionId ?? null
+  const [selectedDecisionId, setSelectedDecisionId] = useState<string | null>(latestDecisionId)
+
+  useEffect(() => {
+    setSelectedDecisionId(latestDecisionId)
+  }, [cycles.length, latestDecisionId])
+
+  const newestFirst = [...cycles].reverse()
+  const selectedCycle = cycles.find((cycle) =>
+    cycle.decisionId === selectedDecisionId) ?? newestFirst[0] ?? null
+  const selectedNumber = selectedCycle
+    ? cycles.findIndex((cycle) => cycle.decisionId === selectedCycle.decisionId) + 1
+    : null
+
+  return <div className="grid gap-3">
+    <section className="panel p-4" aria-label="Current-run fuzzy cycle history">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="eyebrow">Current-run fuzzy cycles</h2>
+          <p className="mt-1 text-[10px] text-muted">Newest cycle appears first; select any decision to inspect its complete path.</p>
+        </div>
+        <span className="event-badge border-primary/30 bg-primary/10 text-primary">{cycles.length} captured</span>
+      </div>
+      {newestFirst.length > 0
+        ? <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Select fuzzy decision cycle">
+          {newestFirst.map((cycle) => {
+            const cycleNumber = cycles.findIndex((item) => item.decisionId === cycle.decisionId) + 1
+            const selected = cycle.decisionId === selectedCycle?.decisionId
+            return <button
+              key={cycle.decisionId}
+              type="button"
+              aria-pressed={selected}
+              className={selected ? 'button-primary' : 'button-secondary'}
+              onClick={() => setSelectedDecisionId(cycle.decisionId)}
+            >
+              Cycle {cycleNumber}
+            </button>
+          })}
+        </div>
+        : <p className="mt-3 text-xs text-muted">No fuzzy cycle has been captured in this run.</p>}
+    </section>
+    <FuzzyDecisionFlow
+      cycle={selectedCycle}
+      policy={policy}
+      title={selectedNumber == null ? 'Fuzzy decision cycle' : 'Fuzzy decision cycle ' + selectedNumber}
+    />
+  </div>
+}
+
 export function ScenarioLabPage() {
   const {
-    scenario, scenarioDefinition: definition, dashboard, selectScenario, loadScenario,
-    startScenario, stopScenario, updateScenarioSetup, setScenarioBatteryVoltage,
+    scenario, scenarioDefinition: definition, dashboard, comparison,
+    selectScenario, loadScenario, startScenario, runScenarioComparison,
+    stopScenario, updateScenarioSetup, setScenarioBatteryVoltage,
   } = useSimulator()
   const [message, setMessage] = useState('')
   const loaded = scenario.loadedId === definition.id
   const batteryVoltage = batteryVoltageFor(definition)
   const setupDisabled = scenario.active
+  const comparisonBusy = comparison.status === 'running_crisp' || comparison.status === 'running_fuzzy'
+  const timing = cycleTiming(definition.setup.tier2CycleS, definition.setup.scale ?? 60)
   const updateOverride = (key: keyof SensorOverrides, value: number | undefined) =>
     updateScenarioSetup({ overrides: { ...definition.setup.overrides, [key]: value } })
   const runClean = async () => {
@@ -34,6 +104,17 @@ export function ScenarioLabPage() {
     try { await startScenario(true); setMessage('Scenario running against the real local services.') }
     catch (error) { setMessage('Unable to start: ' + (error instanceof Error ? error.message : String(error))) }
   }
+  const runComparison = async () => {
+    const confirmed = window.confirm('This A/B comparison will reset the scoped simulator backend before the crisp run and again before the fuzzy-active run. Continue?')
+    if (!confirmed) return
+    setMessage('Running crisp baseline, then fuzzy active with a fresh backend state…')
+    try {
+      await runScenarioComparison()
+      setMessage('Crisp versus fuzzy comparison complete.')
+    } catch (error) {
+      setMessage('Unable to compare: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
   const passed = scenario.completed && scenario.results.every((item) => item === 'pass')
   const progress = Math.min(100, scenario.completed ? 100 : scenario.elapsedRealS / definition.durationRealS * 100)
 
@@ -42,14 +123,14 @@ export function ScenarioLabPage() {
       <header className="sticky top-0 z-30 border-b border-outline bg-surface/90 px-4 py-3 shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3">
           <Link className="flex items-center gap-2 text-primary transition hover:text-ink" to="/"><ArrowLeft size={18} /> Dashboard</Link>
-          <div className="flex items-center gap-3 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-tertiary/10 text-tertiary"><FlaskConical size={19} /></span><div><h1 className="font-semibold">Scenario Lab</h1><p className="text-[10px] uppercase tracking-wider text-muted">17 deterministic real-engine definitions</p></div></div>
+          <div className="flex items-center gap-3 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-tertiary/10 text-tertiary"><FlaskConical size={19} /></span><div><h1 className="font-semibold">Scenario Lab</h1><p className="text-[10px] uppercase tracking-wider text-muted">{scenarios.length} deterministic real-engine definitions</p></div></div>
           <div className="flex items-center gap-2"><ThemeToggle /><Link className="button-secondary" to="/configuration">Configuration</Link></div>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-[1600px] gap-4 p-4 lg:grid-cols-[330px_1fr_390px]">
         <aside className="panel overflow-hidden">
-          <div className="panel-header"><h2 className="eyebrow">Scenario catalog</h2><p className="mt-1 text-xs text-muted">6 Tier‑1 · 8 Tier‑2 · 3 integrated</p></div>
+          <div className="panel-header"><h2 className="eyebrow">Scenario catalog</h2><p className="mt-1 text-xs text-muted">{scenarios.filter((item) => item.tier === 'Tier-1').length} Tier‑1 · {scenarios.filter((item) => item.tier === 'Tier-2').length} Tier‑2 · {scenarios.filter((item) => item.tier === 'Integrated').length} integrated</p></div>
           <div className="thin-scrollbar max-h-[calc(100vh-150px)] overflow-y-auto p-2">
             {(['Tier-1', 'Tier-2', 'Integrated'] as const).map((tier) => <section key={tier}>
               <h3 className="sticky top-0 z-10 bg-surface-lowest px-2 py-2 text-[10px] font-bold uppercase text-muted">{tier}</h3>
@@ -78,6 +159,7 @@ export function ScenarioLabPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button className="button-secondary" type="button" disabled={scenario.active} onClick={() => { loadScenario(definition.id); setMessage('Edited setup applied. Backend history has not been reset.') }}><RotateCcw size={15} /> Apply setup</button>
                 <button className="button-primary" type="button" disabled={!loaded || scenario.active} onClick={() => void runClean()}><Play size={15} /> Run clean</button>
+                <button className="button-secondary" type="button" disabled={!loaded || scenario.active || comparisonBusy || !definition.setup.tier2} onClick={() => void runComparison()}><FlaskConical size={15} /> Compare crisp vs fuzzy</button>
                 <button className="button-secondary" type="button" disabled={!scenario.active} onClick={stopScenario}><Square size={14} /> Stop</button>
               </div>
               {message && <div className="event-card mt-3 p-3 text-xs" data-tone={message.startsWith('Unable') ? 'danger' : scenario.active ? 'success' : 'primary'} role="status"><span className="font-semibold">Status update</span><p className="mt-1 text-muted">{message}</p></div>}
@@ -96,9 +178,13 @@ export function ScenarioLabPage() {
               <NumberField label="Clock scale" value={definition.setup.scale} unit="×" min={0.1} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ scale: value })} />
               <NumberField label="Telemetry cadence" value={definition.setup.pushIntervalS} unit="real s" min={0.1} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ pushIntervalS: value })} />
               <NumberField label="Tier-2 cycle" value={definition.setup.tier2CycleS} unit="real s" min={1} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ tier2CycleS: value })} />
+              <SelectField label="Tier-2 policy" value={definition.setup.tier2Policy ?? 'crisp'} options={['crisp', 'fuzzy_shadow', 'fuzzy_active']} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ tier2Policy: value as Tier2Policy })} />
               <ToggleField label="Tier-1 enabled" checked={definition.setup.tier1} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ tier1: value })} />
               <ToggleField label="Tier-2 enabled" checked={definition.setup.tier2} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ tier2: value })} />
             </SetupGroup>
+            <p className="mt-3 rounded-md border border-primary/20 bg-primary/[.04] p-3 text-xs text-muted">
+              This setup runs every {timing.realSecondsPerCycle}s real ({timing.simulatedMinutesPerCycle.toFixed(1)} simulated min). Two-cycle confirmation is {timing.twoCycleRealSeconds}s real / {timing.twoCycleSimulatedMinutes.toFixed(1)} simulated min; severe risk and hard safety do not wait.
+            </p>
 
             <SetupGroup title="Physical baseline">
               <SelectField label="Weather" value={definition.setup.manualWeather ?? 'sunny'} options={weatherOptions} disabled={setupDisabled} onChange={(value) => updateScenarioSetup({ manualWeather: value as WeatherCondition })} />
@@ -149,6 +235,24 @@ export function ScenarioLabPage() {
             </dl>
           </section>
 
+          <ScenarioFuzzyCycleHistory
+            cycles={scenario.observations.fuzzyCycles}
+            policy={definition.setup.tier2Policy ?? 'crisp'}
+          />
+
+          <section className="panel overflow-hidden" aria-label="Crisp versus fuzzy comparison">
+            <div className="panel-header flex items-center justify-between gap-3"><div><h2 className="eyebrow">Crisp versus fuzzy A/B</h2><p className="mt-1 text-[10px] text-muted">Identical deterministic setup · backend reset between runs</p></div><span className={comparison.status === 'complete' ? 'event-badge border-secondary/30 bg-secondary/10 text-secondary' : comparison.status === 'error' ? 'event-badge border-danger/30 bg-danger/10 text-danger' : comparisonBusy ? 'event-badge border-warning/30 bg-warning/10 text-warning' : 'event-badge border-outline bg-surface-high text-muted'}>{comparison.status.replaceAll('_', ' ')}</span></div>
+            {comparison.error && <p className="m-3 rounded bg-danger/10 p-3 text-xs text-danger">{comparison.error}</p>}
+            {comparison.crisp && comparison.fuzzy && comparison.differences ? (
+              <div className="thin-scrollbar overflow-x-auto p-3">
+                <table className="w-full min-w-[560px] text-left text-xs">
+                  <thead><tr className="text-[9px] uppercase text-muted"><th className="p-2">Metric</th><th className="p-2">Crisp</th><th className="p-2">Fuzzy active</th><th className="p-2">Δ fuzzy − crisp</th></tr></thead>
+                  <tbody>{metricRows.map(({ key, label, unit }) => <tr className="border-t border-outline" key={key}><td className="p-2 font-semibold">{label}</td><td className="p-2 font-mono">{comparison.crisp?.metrics[key].toFixed(2)} {unit}</td><td className="p-2 font-mono">{comparison.fuzzy?.metrics[key].toFixed(2)} {unit}</td><td className={'p-2 font-mono ' + (comparison.differences && comparison.differences[key] < 0 ? 'text-secondary' : comparison.differences && comparison.differences[key] > 0 ? 'text-warning' : 'text-muted')}>{comparison.differences![key] > 0 ? '+' : ''}{comparison.differences![key].toFixed(2)} {unit}</td></tr>)}</tbody>
+                </table>
+              </div>
+            ) : <p className="p-4 text-xs text-muted">Run the comparison to collect grid energy, reserve, optional service, safety, action, and reversal metrics.</p>}
+          </section>
+
           <section className="panel overflow-hidden">
             <div className="panel-header flex items-center justify-between"><div><h2 className="eyebrow">Injected disturbances</h2><p className="mt-1 text-[10px] text-muted">Color shows completed, next, and scheduled events</p></div><span className="event-badge border-warning/30 bg-warning/10 text-warning">{definition.events.length} scheduled</span></div>
             <div className="space-y-2 p-3">
@@ -190,9 +294,15 @@ export function ScenarioLabPage() {
               <Count label="T2 applied" value={scenario.observations.tier2ActionsApplied.length} tone="success" />
               <Count label="T2 blocked" value={scenario.observations.tier2ActionsBlocked.length} tone="warning" />
               <Count label="Backend errors" value={scenario.observations.backendErrors.length} tone="danger" />
+              <Count label="Fuzzy bands" value={scenario.observations.fuzzyBands.length} tone="primary" />
+              <Count label="Fallbacks" value={scenario.observations.fuzzyFallbackReasons.length} tone="warning" />
+              <Count label="Reversals" value={scenario.metrics.commandReversals} tone="warning" />
+              <Count label="Mandatory OFF" value={scenario.metrics.mandatoryOffCommands} tone="danger" />
             </div>
             {scenario.observations.tier1Situations.length > 0 && <p className="mt-3 break-words font-mono text-[10px] text-tertiary">T1: {scenario.observations.tier1Situations.join(', ')}</p>}
             {scenario.observations.tier2Branches.length > 0 && <p className="mt-2 break-words font-mono text-[10px] text-primary">T2: {scenario.observations.tier2Branches.join(', ')}</p>}
+            {scenario.observations.fuzzyBands.length > 0 && <p className="mt-2 break-words font-mono text-[10px] text-secondary">Bands: {scenario.observations.fuzzyBands.join(' → ')}</p>}
+            {scenario.observations.bandTransitions.length > 0 && <p className="mt-2 break-words font-mono text-[10px] text-tertiary">Transitions: {scenario.observations.bandTransitions.join(', ')}</p>}
           </section>
         </aside>
       </main>

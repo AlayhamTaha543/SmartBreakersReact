@@ -13,7 +13,7 @@ This repository contains the frontend simulator only. Its decision services run 
 - Independent Tier-1 safety and Tier-2 control switches
 - Manual breaker control with Tier-1 safety lockouts
 - Configurable site, breaker, backend, and KBS settings
-- Seventeen deterministic Tier-1, Tier-2, and integrated scenarios
+- Twenty-four deterministic Tier-1, Tier-2, fuzzy, integrated, and real-world scenarios
 - Persistent browser configuration and versioned simulation checkpoints
 - Responsive React Router interface with Vercel deep-link support
 
@@ -88,6 +88,28 @@ npm run build      # create the production build in dist/
 ```
 
 The opt-in live scenario tests require running backend services and are skipped during the standard test command.
+
+Run every scenario with both tiers forced on and print a per-scenario evidence summary:
+
+```bash
+RUN_LIVE_SCENARIOS=1 LIVE_FORCE_BOTH_TIERS=1 LIVE_SCENARIO_REPORT=1 \
+  npm test -- src/simulation/liveScenarios.test.tsx --reporter=verbose
+```
+
+Exercise the reset → crisp → reset → fuzzy-active comparison flow for one
+deterministic scenario and print its seven metrics:
+
+```bash
+RUN_LIVE_COMPARISON=1 LIVE_COMPARISON_SCENARIO=fuzzy-boundary-noise \
+  npm test -- src/simulation/liveScenarios.test.tsx --reporter=verbose
+```
+
+The `real-damascus-evening-outage` scenario is a physical reference case: a
+4 kWp array, 4 kW inverter, 5 kWh 24 V-class battery at 27% usable charge,
+and realistic small-office/clinic loads at 18:00 in July. PV and battery
+behavior come from the simulator physics and the checked-in NASA POWER
+Damascus climate row; only the loss of the 230 V utility supply is injected.
+Tier-1 preserves the mandatory circuit while Tier-2 persists the safety interlock.
 
 ## Deploy to Vercel
 

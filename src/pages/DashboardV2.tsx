@@ -1,6 +1,7 @@
 import { AlertTriangle, Battery, Cloud, CloudFog, CloudLightning, CloudRain, Gauge, Grid3X3, Pause, Play, PlugZap, Sun, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { BreakerDeviceIcon, breakerVisual } from '../components/BreakerDeviceIcon'
+import { FuzzyDecisionFlow } from '../components/FuzzyDecisionFlow'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { breakerDrawW } from '../simulation/physics'
 import type { EvidenceEvent, SimulatedBreaker, WeatherCondition } from '../simulation/types'
@@ -90,6 +91,16 @@ function TierCard({ tier }: { tier: 'T1' | 'T2' }) {
       <p className={'mt-2 text-xs ' + (hasDecision ? 'font-semibold text-warning' : 'text-ink')}>{tier === 'T1' ? 'Situation: ' + (value.situation || 'none') : 'Branch: ' + (value.branch || 'none')}</p>
     </button>
   )
+}
+
+function FuzzySupervisorCard() {
+  const { dashboard, configuration } = useSimulator()
+  const policy = dashboard.tier2.policy ?? configuration.settings.tier2_policy
+  return <FuzzyDecisionFlow
+    cycle={dashboard.tier2.latestFuzzyCycle ?? null}
+    policy={policy}
+    title="Latest fuzzy decision cycle"
+  />
 }
 
 function BreakerCard({ breaker }: { breaker: SimulatedBreaker }) {
@@ -220,6 +231,7 @@ export function DashboardV2() {
               <Reading label="Grid breaker" value={flow?.gridOn ? (flow.gridSupplying ? 'ON · supplying' : 'ON · no grid') : 'OFF'} tone={flow?.gridSupplying ? 'primary' : undefined} />
             </div>
           </section>
+          <FuzzySupervisorCard />
           <section className="panel max-h-72 overflow-hidden p-4">
             <div className="mb-3 flex items-center justify-between"><h2 className="eyebrow">Alerts</h2><span className={'event-badge ' + (dashboard.alerts.length ? 'border-danger/30 bg-danger/10 text-danger' : 'border-secondary/30 bg-secondary/10 text-secondary')}>{dashboard.alerts.length || 'Clear'}</span></div>
             <div className="thin-scrollbar max-h-52 space-y-2 overflow-y-auto">

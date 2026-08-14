@@ -3,7 +3,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { BreakerDeviceIcon, breakerVisual } from '../components/BreakerDeviceIcon'
 import { ThemeToggle } from '../components/ThemeToggle'
-import type { SimulatorConfiguration, SiteInputs, WeatherCondition } from '../simulation/types'
+import { cycleTiming } from '../simulation/cycleTiming'
+import type { SimulatorConfiguration, SiteInputs, Tier2Policy, WeatherCondition } from '../simulation/types'
 import { useSimulator } from '../state/SimulatorContext'
 
 export function ConfigurationV2() {
@@ -15,6 +16,7 @@ export function ConfigurationV2() {
 
   const site = <K extends keyof SiteInputs>(key: K, value: SiteInputs[K]) =>
     setDraft((current) => ({ ...current, site: { ...current.site, [key]: value } }))
+  const timing = cycleTiming(draft.settings.cycle_seconds, draft.site.scale)
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setSaving(true)
@@ -44,6 +46,7 @@ export function ConfigurationV2() {
           <Header icon={<Settings2 size={18} />} title="Editable backend KBS settings" subtitle="PATCH /api/kbs/settings/ · Python remains the only decision authority" />
           <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5">
             <Number tone="primary" label="K cycle cadence" value={draft.settings.cycle_seconds} unit="real s" min={1} step={1} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, cycle_seconds: value } })} />
+            <Select tone="primary" label="Tier-2 policy" value={draft.settings.tier2_policy} options={['crisp', 'fuzzy_shadow', 'fuzzy_active']} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, tier2_policy: value as Tier2Policy } })} />
             <Select tone="secondary" label="Engine mode" value={draft.settings.mode} options={['active', 'observing']} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, mode: value as 'active' | 'observing' } })} />
             <Select tone="warning" label="Data source" value={draft.settings.data_source} options={['simulator', 'real']} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, data_source: value as 'simulator' | 'real' } })} />
             <Toggle tone="secondary" label="Power saving" checked={draft.settings.power_saving} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, power_saving: value } })} />
@@ -53,6 +56,9 @@ export function ConfigurationV2() {
             <Number tone="tertiary" label="Joule deficit limit" value={draft.settings.joule_deficit_limit_J} unit="J" step={1000} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, joule_deficit_limit_J: value } })} />
             <Number tone="primary" label="Grid present minimum" value={draft.settings.grid_present_min_V} unit="V" step={1} onChange={(value) => setDraft({ ...draft, settings: { ...draft.settings, grid_present_min_V: value } })} />
           </div>
+          <p className="border-t border-outline px-4 py-3 text-xs text-muted">
+            At {draft.site.scale}×, one {timing.realSecondsPerCycle}s React cycle advances {timing.simulatedMinutesPerCycle.toFixed(1)} simulated minutes; two-cycle confirmation takes {timing.twoCycleRealSeconds}s real / {timing.twoCycleSimulatedMinutes.toFixed(1)} simulated minutes. Severe fuzzy risk and hard safety act immediately.
+          </p>
         </section>
 
         <section className="panel overflow-hidden">
