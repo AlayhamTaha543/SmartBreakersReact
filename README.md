@@ -23,6 +23,7 @@ This repository contains the frontend simulator only. Its decision services run 
 - TypeScript and Vite
 - Tailwind CSS
 - Vitest and Testing Library
+- Playwright and axe-core
 - ESLint
 
 ## Requirements
@@ -86,6 +87,25 @@ npm run lint       # run ESLint
 npm test           # run the unit and component tests
 npm run build      # create the production build in dist/
 ```
+
+## Interface QA
+
+Install the Chromium runtime once, then run the deterministic browser suite:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+The suite mocks only the HTTP service boundary; the React simulator and its UI
+state transitions run normally. It checks desktop and mobile navigation,
+keyboard-operated tabs, configuration draft persistence, the Scenario Lab
+drawer, serious/critical axe findings, horizontal overflow at 320, 768, 1024,
+and 1920 px, and the checked-in dark/light visual baselines.
+
+Use `npm run test:e2e:update` only when intentionally accepting a visual
+change. Run `npm run test:ui` for the complete typecheck, lint, unit/component,
+build, and browser quality gate used by CI.
 
 The opt-in live scenario tests require running backend services and are skipped during the standard test command.
 
