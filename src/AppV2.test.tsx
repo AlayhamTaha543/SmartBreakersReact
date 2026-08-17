@@ -72,12 +72,39 @@ describe('closed-loop React surfaces', () => {
   it('exposes supported settings and the complete Scenario Lab instead of an IF/THEN editor', async () => {
     const { unmount } = renderApp('/configuration')
     expect(await screen.findByText('Editable backend KBS settings')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tier-2 policy')).toHaveValue('crisp')
     expect(screen.queryByText('IF / THEN')).not.toBeInTheDocument()
     unmount()
     renderApp('/scenarios')
-    expect(await screen.findByText('6 Tier‑1 · 8 Tier‑2 · 3 integrated')).toBeInTheDocument()
+    expect(await screen.findByText('6 Tier‑1 · 14 Tier‑2 · 4 integrated')).toBeInTheDocument()
     expect(screen.getAllByText('T1 · normal operation')).toHaveLength(2)
     expect(screen.getByText('T1 + T2 · danger clears and control returns')).toBeInTheDocument()
+  })
+
+  it('shows fuzzy audit evidence and comparison controls', async () => {
+    const { unmount } = renderApp()
+    expect(await screen.findByText('Latest fuzzy decision cycle')).toBeInTheDocument()
+    expect(screen.getByText('Fuzzy supervisor disabled')).toBeInTheDocument()
+    expect(screen.getByText('Crisp controller is authoritative.')).toBeInTheDocument()
+    unmount()
+    renderApp('/scenarios')
+    await screen.findByText('Crisp versus fuzzy A/B')
+    expect(screen.getByText('Current-run fuzzy cycles')).toBeInTheDocument()
+    expect(screen.getByText('0 captured')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Compare crisp vs fuzzy/ })).toBeDisabled()
+  })
+
+  it('synchronizes a selected fuzzy policy through the settings API', async () => {
+    const user = userEvent.setup()
+    renderApp('/configuration')
+    const policy = await screen.findByLabelText('Tier-2 policy')
+    await user.selectOptions(policy, 'fuzzy_shadow')
+    await user.click(screen.getByRole('button', { name: /Save & initialize/ }))
+    await waitFor(() => {
+      const call = vi.mocked(fetch).mock.calls.find(([url, init]) =>
+        String(url).includes('/api/kbs/settings/') && String(init?.body).includes('fuzzy_shadow'))
+      expect(call).toBeTruthy()
+    })
   })
 
   it('persists the light-mode choice', async () => {
@@ -96,7 +123,7 @@ describe('closed-loop React surfaces', () => {
   it('edits scenario setup and shows the changed battery voltage immediately', async () => {
     const user = userEvent.setup()
     renderApp('/scenarios')
-    await screen.findByText('6 Tier‑1 · 8 Tier‑2 · 3 integrated')
+    await screen.findByText('6 Tier‑1 · 14 Tier‑2 · 4 integrated')
     await user.click(screen.getByRole('button', { name: /T1 · battery critical/ }))
     expect(await screen.findAllByText('T1 · battery critical')).toHaveLength(2)
 

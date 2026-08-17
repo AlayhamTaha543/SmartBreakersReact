@@ -1,14 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { simulatorApi } from '../simulation/api'
-import { CHECKPOINT_KEY, cloneConfiguration, defaultBreakers, defaultConfiguration, freshObservations, loadStoredConfiguration, saveStoredConfiguration } from '../simulation/defaults'
-import { allowedWeather, buildBreakerStatuses, buildTelemetry, pickAutoWeather, stepPhysical, tier1Payload } from '../simulation/physics'
+import { CHECKPOINT_KEY, cloneConfiguration, defaultBreakers, defaultConfiguration, freshMetrics, freshObservations, loadStoredConfiguration, saveStoredConfiguration } from '../simulation/defaults'
+import {
+  buildFuzzyDecisionCycle, countdownForAction, decisionActionKey,
+  mergeFuzzyDecisionCycle, shouldExecuteBackendAction,
+  updateFuzzyDecisionCycleActionStage, updateFuzzyCyclesActionStage,
+  upsertFuzzyDecisionCycle,
+} from '../simulation/fuzzyDecisionCycle'
+import { allowedWeather, breakerDrawW, buildBreakerStatuses, buildTelemetry, pickAutoWeather, stepPhysical, tier1Payload } from '../simulation/physics'
 import { CANONICAL_TIER2_ENGINE, tier2DecisionProvenance } from '../simulation/provenance'
 import { evaluateScenario } from '../simulation/scenarioEvaluator'
+import { differenceMetrics } from '../simulation/scenarioMetrics'
 import { scenarios } from '../simulation/scenarios'
 import type {
   ClimateRow, Countdown, DashboardSnapshot, EvidenceEvent, EvidenceTier, KBSAction,
-  KBSAlert, PhysicalState, ScenarioDefinition, ScenarioRuntime, ScenarioSetup, SimulationCheckpoint, SimulatorConfiguration,
-  TierRuntimeState,
+  FuzzyActionStage, FuzzyDecisionCycle, KBSAlert, KBSDecision, PhysicalState,
+  ScenarioComparison, ScenarioDefinition, ScenarioRunSummary, ScenarioRuntime,
+  ScenarioSetup, SimulationCheckpoint, SimulatorConfiguration, Tier2Policy, TierRuntimeState,
 } from '../simulation/types'
 
 interface SimulatorContextValue {
@@ -20,6 +28,7 @@ interface SimulatorContextValue {
   running: boolean
   scenario: ScenarioRuntime
   scenarioDefinition: ScenarioDefinition
+  comparison: ScenarioComparison
   saveConfiguration: (next: SimulatorConfiguration) => Promise<void>
   resetConfiguration: () => void
   reloadClimate: () => Promise<void>
@@ -29,19 +38,26 @@ interface SimulatorContextValue {
   selectScenario: (id: string) => void
   loadScenario: (id: string) => void
   startScenario: (clean: boolean) => Promise<void>
+  runScenarioComparison: () => Promise<void>
   stopScenario: () => void
   updateScenarioSetup: (patch: Partial<ScenarioSetup>) => void
   setScenarioBatteryVoltage: (voltage: number | undefined) => void
 }
 
-const initialTier = (enabled = false): TierRuntimeState => ({
+const initialTier = (enabled = false, policy?: Tier2Policy): TierRuntimeState => ({
   enabled, connected: false, status: enabled ? 'waiting' : 'disabled', engine: null,
+  policy, fuzzyEvaluation: null, counterfactual: null, controllerState: null, latestFuzzyCycle: null,
 })
 const initialScenario = (): ScenarioRuntime => ({
   selectedId: scenarios[0].id, loadedId: null, active: false, completed: false,
   phase: 'NOT LOADED', elapsedRealS: 0, nextEventIndex: 0, startedRealMs: 0,
   startedSimMs: 0, overrides: {}, observations: freshObservations(), results: [],
+  metrics: freshMetrics(), lastCommands: {},
   log: [],
+})
+const initialComparison = (): ScenarioComparison => ({
+  status: 'idle', scenarioId: null, crisp: null, fuzzy: null,
+  differences: null, error: null,
 })
 const SimulatorContext = createContext<SimulatorContextValue | null>(null)
 
@@ -57,6 +73,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   const [scenario, setScenario] = useState<ScenarioRuntime>(initialScenario)
   const scenarioRef = useRef(scenario)
   const [scenarioDefinition, setScenarioDefinition] = useState<ScenarioDefinition>(() => structuredClone(scenarios[0]))
+  const [comparison, setComparison] = useState<ScenarioComparison>(initialComparison)
   const selectedDefinitionRef = useRef<ScenarioDefinition>(scenarioDefinition)
   const loadedDefinitionRef = useRef<ScenarioDefinition | null>(null)
   const [dashboard, setDashboard] = useState<DashboardSnapshot>(() => ({
@@ -65,7 +82,8 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     climate: null, climateError: null, weather: configuration.site.manualWeather,
     weatherMode: configuration.site.weatherAuto ? 'CSV AUTO' : 'MANUAL', availableWeather: [],
     flow: null, breakers: structuredClone(configuration.breakers), pvHistory: [], evidence: [],
-    alerts: [], countdowns: [], tier1: initialTier(), tier2: initialTier(),
+    alerts: [], countdowns: [], tier1: initialTier(),
+    tier2: initialTier(false, configuration.settings.tier2_policy),
     backendWeatherCondition: null, lastBranch: null,
   }))
 
@@ -91,7 +109,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   const alertsRef = useRef<KBSAlert[]>([])
   const countdownsRef = useRef<Countdown[]>([])
   const deferredRef = useRef<KBSAction[]>([])
-  const processedActionsRef = useRef(new Set<number>())
+  const processedActionsRef = useRef(new Set<string>())
   const organizationNameRef = useRef('Organization ' + configuration.connections.organization)
   const backendWeatherRef = useRef<string | null>(null)
   const sequenceRef = useRef(0)
@@ -103,11 +121,12 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   const backendQueueRef = useRef<Promise<void>>(Promise.resolve())
   const lastTier1Ref = useRef(0)
   const lastTier1EvidenceRef = useRef(0)
-  const lastPushRef = useRef(0)
+  const nextPushDueRef = useRef<number | null>(null)
   const lastCycleRef = useRef(0)
   const lastHistoryRef = useRef(0)
   const lastRenderRef = useRef(0)
   const lastTickRef = useRef(performance.now())
+  const completionRef = useRef<((summary: ScenarioRunSummary) => void) | null>(null)
 
   const queueBackend = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
     const queued = backendQueueRef.current.then(operation)
@@ -159,10 +178,67 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     else if (kind === 'tier2_applied') observations.tier2ActionsApplied.push(value as KBSAction)
     else if (kind === 'tier2_blocked') observations.tier2ActionsBlocked.push(value as KBSAction)
     else if (kind === 'tier2_alert') observations.tier2Alerts.push(value as KBSAlert)
+    else if (kind === 'fuzzy_band') observations.fuzzyBands.push(value as never)
+    else if (kind === 'fuzzy_fallback') observations.fuzzyFallbackReasons.push(String(value))
+    else if (kind === 'counterfactual_branch') observations.counterfactualBranches.push(String(value))
+    else if (kind === 'band_transition') observations.bandTransitions.push(String(value))
+    else if (kind === 'fuzzy_cycle') observations.fuzzyCycles = upsertFuzzyDecisionCycle(
+      observations.fuzzyCycles, value as FuzzyDecisionCycle)
     else if (kind === 'backend_error') observations.backendErrors.push(String(value))
     const definition = loadedDefinitionRef.current?.id === runtime.loadedId ? loadedDefinitionRef.current : null
-    runtime.results = definition ? evaluateScenario(definition.expectations, observations, physicalRef.current.breakers) : []
+    runtime.results = definition ? evaluateScenario(definition.expectations, observations, physicalRef.current.breakers, false, runtime.metrics) : []
     setScenario({ ...runtime, observations: { ...observations }, results: [...runtime.results] })
+  }, [])
+
+  const recordFuzzyCycle = useCallback((decision: KBSDecision) => {
+    const incoming = buildFuzzyDecisionCycle(decision)
+    if (!incoming) return
+    const current = tier2Ref.current.latestFuzzyCycle
+    const next = current?.decisionId === incoming.decisionId
+      ? mergeFuzzyDecisionCycle(current, incoming)
+      : incoming
+    tier2Ref.current.latestFuzzyCycle = next
+    observe('fuzzy_cycle', next)
+  }, [observe])
+
+  const updateFuzzyActionStage = useCallback((
+    decisionId: string,
+    actionId: number,
+    stage: FuzzyActionStage,
+    action?: KBSAction,
+  ) => {
+    const latest = tier2Ref.current.latestFuzzyCycle
+    if (latest) {
+      tier2Ref.current.latestFuzzyCycle = updateFuzzyDecisionCycleActionStage(
+        latest, decisionId, actionId, stage, action,
+      )
+    }
+    const runtime = scenarioRef.current
+    if (!runtime.active) return
+    runtime.observations.fuzzyCycles = updateFuzzyCyclesActionStage(
+      runtime.observations.fuzzyCycles,
+      decisionId,
+      actionId,
+      stage,
+      action,
+    )
+    const definition = loadedDefinitionRef.current?.id === runtime.loadedId
+      ? loadedDefinitionRef.current
+      : null
+    runtime.results = definition
+      ? evaluateScenario(
+        definition.expectations,
+        runtime.observations,
+        physicalRef.current.breakers,
+        false,
+        runtime.metrics,
+      )
+      : []
+    setScenario({
+      ...runtime,
+      observations: { ...runtime.observations },
+      results: [...runtime.results],
+    })
   }, [])
 
   const reloadClimate = useCallback(async () => {
@@ -200,9 +276,32 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     }
   }, [evidence, queueBackend])
 
-  const applySwitch = useCallback((deviceId: string, enabled: boolean, source: 'T1' | 'T2' | 'MANUAL', action?: KBSAction) => {
+  const applySwitch = useCallback((
+    deviceId: string,
+    enabled: boolean,
+    source: 'T1' | 'T2' | 'MANUAL',
+    action?: KBSAction,
+    decisionId?: string,
+  ) => {
     const breaker = physicalRef.current.breakers.find((item) => item.deviceId === deviceId)
-    if (!breaker) return false
+    if (!breaker) {
+      if (source === 'T2' && action) updateFuzzyActionStage(
+        decisionId ?? action.decision_event_id, action.id, 'failed', action,
+      )
+      evidence('EXEC', 'ERROR', 'No local breaker exists for ' + deviceId, action)
+      return false
+    }
+    const runtime = scenarioRef.current
+    if (runtime.active && source !== 'MANUAL') {
+      runtime.metrics.actionCount += 1
+      if (runtime.lastCommands[deviceId] && runtime.lastCommands[deviceId] !== (enabled ? 'on' : 'off')) {
+        runtime.metrics.commandReversals += 1
+      }
+      runtime.lastCommands[deviceId] = enabled ? 'on' : 'off'
+      if (!enabled && breaker.priorityType === 'mandatory') {
+        runtime.metrics.mandatoryOffCommands += 1
+      }
+    }
     breaker.switchOn = enabled
     breaker.countdownS = 0
     breaker.onSinceMs = enabled ? physicalRef.current.simMs : null
@@ -211,43 +310,91 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     evidence('EXEC', 'COMMAND', source + ' applied ' + deviceId + ' ' + (enabled ? 'ON' : 'OFF'), action)
     if (source === 'T2' && action) {
       observe('tier2_applied', action)
+      updateFuzzyActionStage(
+        decisionId ?? action.decision_event_id, action.id, 'applied', action,
+      )
       void acknowledge(action.id)
     }
     return true
-  }, [acknowledge, evidence, observe])
+  }, [acknowledge, evidence, observe, updateFuzzyActionStage])
 
   const drainDeferred = useCallback(() => {
     if (tier1Ref.current.situation || !deferredRef.current.length) return
     const waiting = [...deferredRef.current]
     deferredRef.current = []
-    for (const action of waiting) applySwitch(action.device_id, true, 'T2', action)
+    for (const action of waiting) {
+      applySwitch(action.device_id, action.action === 'on', 'T2', action, action.decision_event_id)
+    }
   }, [applySwitch])
 
   const handleTier2Actions = useCallback((actions: KBSAction[]) => {
     for (const action of actions) {
-      if (processedActionsRef.current.has(action.id)) continue
-      processedActionsRef.current.add(action.id)
+      const decisionId = action.decision_event_id
+      if (!decisionId) {
+        evidence('T2', 'ERROR', 'Ignored action without a decision event ID', action)
+        continue
+      }
+      const actionKey = decisionActionKey(decisionId, action.id)
+      if (processedActionsRef.current.has(actionKey)) continue
+      processedActionsRef.current.add(actionKey)
+      if (!shouldExecuteBackendAction(action)) {
+        evidence('T2', 'INFO', 'Retained resolved Tier-2 action without local execution', action)
+        continue
+      }
       observe('tier2_received', action)
+      updateFuzzyActionStage(decisionId, action.id, 'received', action)
       evidence('T2', 'COMMAND', action.device_id + ' → ' + action.action.toUpperCase() + (action.countdown_s ? ' in ' + action.countdown_s + ' simulated seconds' : ''), action)
       if (action.countdown_s > 0) {
-        const key = 'T2-' + action.id
-        if (!countdownsRef.current.some((item) => item.key === key)) {
-          countdownsRef.current.push({ key, actionId: action.id, source: 'T2', deviceId: action.device_id, fireAtSimMs: physicalRef.current.simMs + action.countdown_s * 1000, reason: action.reason })
+        const countdown = countdownForAction(action, decisionId, physicalRef.current.simMs)
+        if (!countdownsRef.current.some((item) => item.key === countdown.key)) {
+          countdownsRef.current.push(countdown)
         }
+        updateFuzzyActionStage(decisionId, action.id, 'scheduled', action)
         continue
       }
       const breaker = physicalRef.current.breakers.find((item) => item.deviceId === action.device_id)
       if (action.action === 'on' && breaker?.priorityType !== 'ac_grid' && tier1Ref.current.situation) {
         deferredRef.current.push(action)
+        updateFuzzyActionStage(decisionId, action.id, 'held_by_tier1', action)
         observe('tier2_blocked', action)
         evidence('EXEC', 'INFO', 'Tier-2 ON held pending while Tier-1 danger is active', action)
         continue
       }
-      applySwitch(action.device_id, action.action === 'on', 'T2', action)
+      applySwitch(action.device_id, action.action === 'on', 'T2', action, decisionId)
     }
-  }, [applySwitch, evidence, observe])
+  }, [applySwitch, evidence, observe, updateFuzzyActionStage])
 
-  const refreshState = useCallback(async () => {
+  const recordTier2Decision = useCallback((decision: KBSDecision) => {
+    recordFuzzyCycle(decision)
+    tier2Ref.current.policy = decision.policy ?? configRef.current.settings.tier2_policy
+    const fuzzy = decision.fuzzy_evaluation?.profile_version
+      ? decision.fuzzy_evaluation : null
+    tier2Ref.current.fuzzyEvaluation = fuzzy
+    tier2Ref.current.counterfactual = decision.counterfactual?.branch !== undefined
+      ? decision.counterfactual : null
+    if (fuzzy) {
+      if (fuzzy.risk_band) observe('fuzzy_band', fuzzy.risk_band)
+      if (fuzzy.fallback_reason) observe('fuzzy_fallback', fuzzy.fallback_reason)
+      if (fuzzy.controller?.transition) observe('band_transition', fuzzy.controller.transition)
+      evidence(
+        'T2', fuzzy.valid ? 'FACT' : 'INFO',
+        fuzzy.valid
+          ? 'Fuzzy ' + fuzzy.profile_version + ': risk ' + Number(fuzzy.risk_score).toFixed(1) + ' · ' + (fuzzy.risk_band ?? 'unbanded')
+          : 'Fuzzy fallback: ' + fuzzy.fallback_reason,
+        fuzzy,
+      )
+    }
+    if (decision.counterfactual?.branch) {
+      observe('counterfactual_branch', decision.counterfactual.branch)
+      evidence(
+        'T2', 'INFO',
+        'Counterfactual ' + (decision.counterfactual.policy ?? 'policy') + ': ' + decision.counterfactual.branch,
+        decision.counterfactual,
+      )
+    }
+  }, [evidence, observe, recordFuzzyCycle])
+
+  const refreshState = useCallback(async (executePending = true) => {
     const state = await queueBackend(() => simulatorApi.state(configRef.current.connections.backendUrl, configRef.current.connections.organization))
     if (state.organization) organizationNameRef.current = state.organization.name
     const provenance = tier2DecisionProvenance(state.latest_decision)
@@ -255,10 +402,17 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
       tier2Ref.current.engine = state.latest_decision.engine
       tier2Ref.current.branch = state.latest_decision.branch
       if (provenance === 'legacy') tier2Ref.current.status = 'legacy decision — detailed path unavailable'
+      recordFuzzyCycle(state.latest_decision)
       const weather = state.latest_decision.facts?.weather_condition
       backendWeatherRef.current = weather === undefined ? null : String(weather)
     }
-    handleTier2Actions(state.pending_actions)
+    tier2Ref.current.policy = state.policy ?? state.latest_decision?.policy ?? configRef.current.settings.tier2_policy
+    tier2Ref.current.fuzzyEvaluation = state.fuzzy_evaluation?.profile_version
+      ? state.fuzzy_evaluation : null
+    tier2Ref.current.counterfactual = state.counterfactual?.branch !== undefined
+      ? state.counterfactual : null
+    tier2Ref.current.controllerState = state.controller_state ?? null
+    if (executePending) handleTier2Actions(state.pending_actions)
     const known = new Set(alertsRef.current.map((item) => item.created_at + item.kind))
     for (const alert of state.recent_alerts) {
       if (!known.has(alert.created_at + alert.kind)) {
@@ -268,7 +422,15 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
       }
     }
     alertsRef.current = alertsRef.current.slice(0, 20)
-  }, [evidence, handleTier2Actions, observe, queueBackend])
+  }, [evidence, handleTier2Actions, observe, queueBackend, recordFuzzyCycle])
+
+  useEffect(() => {
+    void refreshState(false)
+      .then(publish)
+      .catch((error) => evidence(
+        'T2', 'ERROR', 'Initial Tier-2 state unavailable: ' + String(error),
+      ))
+  }, [evidence, publish, refreshState])
 
   const evaluateTier1 = useCallback(async () => {
     const flow = flowRef.current
@@ -312,6 +474,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
       ))
       if (result.engine !== CANONICAL_TIER2_ENGINE) throw new Error('Unexpected Tier-2 engine provenance')
       tier2Ref.current = { ...tier2Ref.current, connected: true, status: result.detail ?? 'cycle complete', engine: result.engine, branch: result.branch }
+      recordTier2Decision(result)
       if (result.branch) {
         observe('tier2_branch', result.branch)
         evidence('T2', 'RULE', 'Real Tier-2 branch: ' + result.branch, result.facts)
@@ -324,7 +487,7 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
       evidence('T2', 'ERROR', 'Tier-2 unavailable: ' + message)
       observe('backend_error', message)
     } finally { tier2BusyRef.current = false }
-  }, [evidence, handleTier2Actions, observe, queueBackend, refreshState])
+  }, [evidence, handleTier2Actions, observe, queueBackend, recordTier2Decision, refreshState])
 
   const pushTelemetry = useCallback(async () => {
     const flow = flowRef.current
@@ -376,26 +539,69 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
             runtime.active = false
             runtime.completed = true
             runtime.phase = 'FINISHED'
-            runtime.results = evaluateScenario(definition.expectations, runtime.observations, physicalRef.current.breakers, true)
+            runtime.results = evaluateScenario(definition.expectations, runtime.observations, physicalRef.current.breakers, true, runtime.metrics)
             tier1Ref.current = initialTier(false)
-            tier2Ref.current = initialTier(false)
+            tier2Ref.current = initialTier(false, configRef.current.settings.tier2_policy)
+            const resolveCompletion = completionRef.current
+            completionRef.current = null
+            if (resolveCompletion) {
+              const summary: ScenarioRunSummary = {
+                policy: configRef.current.settings.tier2_policy,
+                metrics: { ...runtime.metrics },
+                results: [...runtime.results],
+              }
+              window.setTimeout(() => resolveCompletion(summary), 0)
+            }
           }
-          setScenario({ ...runtime, observations: { ...runtime.observations }, results: [...runtime.results], log: [...runtime.log] })
+          setScenario({
+            ...runtime, observations: { ...runtime.observations },
+            results: [...runtime.results], metrics: { ...runtime.metrics },
+            lastCommands: { ...runtime.lastCommands }, log: [...runtime.log],
+          })
         }
         if (configRef.current.site.weatherAuto && physicalRef.current.simMs >= nextWeatherRef.current) {
           physicalRef.current.weather = pickAutoWeather(row, new Date(physicalRef.current.simMs))
           nextWeatherRef.current = physicalRef.current.simMs + (30 + Math.random() * 60) * 60_000
         } else if (!configRef.current.site.weatherAuto) physicalRef.current.weather = configRef.current.site.manualWeather
         flowRef.current = stepPhysical(physicalRef.current, configRef.current.site, row, realDtS * configRef.current.site.scale)
+        if (runtime.active && flowRef.current) {
+          const simDtS = realDtS * configRef.current.site.scale
+          const metrics = runtime.metrics
+          metrics.gridImportWh += (
+            flowRef.current.gridSupplying ? flowRef.current.loadW : 0
+          ) * simDtS / 3600
+          metrics.minimumBatterySocPercent = Math.min(
+            metrics.minimumBatterySocPercent, flowRef.current.socFrac * 100,
+          )
+          if (
+            flowRef.current.socFrac * 100
+            < (configRef.current.settings.night_reserve_percent ?? 30)
+          ) metrics.timeBelowReserveS += simDtS
+          const optionalW = physicalRef.current.breakers.reduce(
+            (sum, breaker) => sum + (
+              breaker.priorityType === 'normal' || breaker.priorityType === 'comfort'
+                ? breakerDrawW(breaker, physicalRef.current.simMs) : 0
+            ),
+            0,
+          )
+          metrics.optionalLoadServedWh += optionalW * simDtS / 3600
+        }
         for (const countdown of [...countdownsRef.current]) {
           const breaker = physicalRef.current.breakers.find((item) => item.deviceId === countdown.deviceId)
           if (breaker) breaker.countdownS = Math.max(0, Math.ceil((countdown.fireAtSimMs - physicalRef.current.simMs) / 1000))
           if (physicalRef.current.simMs >= countdown.fireAtSimMs) {
             countdownsRef.current = countdownsRef.current.filter((item) => item.key !== countdown.key)
-            if (breaker) applySwitch(countdown.deviceId, false, countdown.source, countdown.actionId ? {
-              id: countdown.actionId, device_id: countdown.deviceId, action: 'off', countdown_s: 0,
-              reason: countdown.reason, branch: tier2Ref.current.branch ?? '', created_at: new Date().toISOString(),
-            } : undefined)
+            if (countdown.action) {
+              applySwitch(
+                countdown.action.device_id,
+                countdown.action.action === 'on',
+                'T2',
+                countdown.action,
+                countdown.decisionId,
+              )
+            } else if (breaker) {
+              applySwitch(countdown.deviceId, false, countdown.source)
+            }
           }
         }
         if (realNow - lastHistoryRef.current >= 1000) {
@@ -408,8 +614,12 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
         void evaluateTier1()
       }
       const pushIntervalMs = (scenarioRef.current.active ? loadedDefinitionRef.current?.setup.pushIntervalS ?? 1 : 1) * 1000
-      if (tier2Ref.current.enabled && realNow - lastPushRef.current >= pushIntervalMs) {
-        lastPushRef.current = realNow
+      const pushDue = nextPushDueRef.current
+      if (tier2Ref.current.enabled && pushDue !== null && realNow >= pushDue) {
+        const followingDue = pushDue + pushIntervalMs
+        nextPushDueRef.current = followingDue > realNow
+          ? followingDue
+          : realNow + pushIntervalMs
         void pushTelemetry()
       }
       if (tier2Ref.current.enabled && realNow - lastCycleRef.current >= configRef.current.settings.cycle_seconds * 1000) {
@@ -454,8 +664,18 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
   }, [activeClimate, publish])
 
   const saveConfiguration = useCallback(async (next: SimulatorConfiguration) => {
-    reinitialize(next)
-    await queueBackend(() => simulatorApi.settings(next.connections.backendUrl, next.connections.organization, next.settings))
+    const synchronized = cloneConfiguration(next)
+    synchronized.settings = {
+      ...synchronized.settings,
+      battery_capacity_Wh: synchronized.site.batteryCapacityWh,
+      max_inverter_power_W: synchronized.site.maxInverterW,
+    }
+    reinitialize(synchronized)
+    await queueBackend(() => simulatorApi.settings(
+      synchronized.connections.backendUrl,
+      synchronized.connections.organization,
+      synchronized.settings,
+    ))
     await reloadClimate()
   }, [queueBackend, reinitialize, reloadClimate])
 
@@ -467,8 +687,8 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
       if (!enabled) { tier1Ref.current.situation = ''; drainDeferred() }
       lastTier1Ref.current = 0
     } else {
-      tier2Ref.current = initialTier(enabled)
-      lastPushRef.current = 0
+      tier2Ref.current = initialTier(enabled, configRef.current.settings.tier2_policy)
+      nextPushDueRef.current = enabled ? performance.now() : null
       lastCycleRef.current = performance.now()
     }
     publish()
@@ -533,7 +753,8 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     const setup = definition.setup
     const next = cloneConfiguration(configRef.current)
     next.site = {
-      ...next.site, localDateTime: setup.localDateTime, scale: setup.scale ?? next.site.scale,
+      ...next.site, localDateTime: setup.localDateTime,
+      city: setup.city ?? next.site.city, scale: setup.scale ?? next.site.scale,
       manualWeather: setup.manualWeather ?? next.site.manualWeather, weatherAuto: setup.weatherAuto ?? false,
       maxPvW: setup.maxPvW ?? next.site.maxPvW, pvThresholdW: setup.pvThresholdW ?? next.site.pvThresholdW,
       maxInverterW: setup.maxInverterW ?? next.site.maxInverterW, gridAvailable: setup.gridAvailable ?? true,
@@ -547,17 +768,30 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
       ...(defaultBreakers.find((value) => value.deviceId === item.deviceId) ?? defaultBreakers[0]),
       ...item,
     }))
-    next.settings = { ...next.settings, cycle_seconds: setup.tier2CycleS, power_saving: setup.powerSaving, battery_low_voltage_V: next.site.batteryFloorV }
+    next.settings = {
+      ...next.settings,
+      cycle_seconds: setup.tier2CycleS,
+      power_saving: setup.powerSaving,
+      tier2_policy: setup.tier2Policy ?? next.settings.tier2_policy,
+      battery_low_voltage_V: next.site.batteryFloorV,
+      battery_capacity_Wh: next.site.batteryCapacityWh,
+      max_inverter_power_W: next.site.maxInverterW,
+    }
     reinitialize(next)
     physicalRef.current.overrides = { ...(setup.overrides ?? {}) }
     tier1Ref.current = initialTier(false)
-    tier2Ref.current = initialTier(false)
+    tier2Ref.current = initialTier(false, next.settings.tier2_policy)
     const runtime: ScenarioRuntime = {
       selectedId: id, loadedId: id, active: false, completed: false,
       phase: definition.events.length ? 'BEFORE DISTURBANCE' : 'MONITORING',
       elapsedRealS: 0, nextEventIndex: 0, startedRealMs: 0, startedSimMs: 0,
       overrides: { ...(setup.overrides ?? {}) }, observations: freshObservations(),
       results: definition.expectations.map(() => 'pending'),
+      metrics: {
+        ...freshMetrics(),
+        minimumBatterySocPercent: next.site.batterySocPercent,
+      },
+      lastCommands: {},
       log: [{ timestamp: new Date(physicalRef.current.simMs).toISOString(), message: 'Loaded ' + definition.name }],
     }
     scenarioRef.current = runtime
@@ -565,12 +799,28 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     publish()
   }, [publish, reinitialize])
 
-  const startScenario = useCallback(async (clean: boolean) => {
+  const startScenario = useCallback(async (clean: boolean, policyOverride?: Tier2Policy) => {
     const definition = loadedDefinitionRef.current?.id === scenarioRef.current.loadedId
       ? loadedDefinitionRef.current
       : null
     if (!definition) throw new Error('Load a scenario first')
+    const selectedPolicy = (
+      policyOverride
+      ?? definition.setup.tier2Policy
+      ?? configRef.current.settings.tier2_policy
+    )
+    configRef.current.settings.tier2_policy = selectedPolicy
+    tier2Ref.current.policy = selectedPolicy
     if (clean) await queueBackend(() => simulatorApi.reset(configRef.current.connections.backendUrl, configRef.current.connections.organization))
+    await queueBackend(() => simulatorApi.settings(configRef.current.connections.backendUrl, configRef.current.connections.organization, {
+      ...configRef.current.settings,
+      data_source: 'simulator', mode: 'active',
+      cycle_seconds: definition.setup.tier2CycleS,
+      power_saving: definition.setup.powerSaving,
+      tier2_policy: selectedPolicy,
+      battery_capacity_Wh: configRef.current.site.batteryCapacityWh,
+      max_inverter_power_W: configRef.current.site.maxInverterW,
+    }))
     if (definition.setup.tier2) {
       const settledAt = physicalRef.current.simMs - 60 * 60_000
       for (const breaker of physicalRef.current.breakers) {
@@ -586,10 +836,6 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
           new Date(breaker.switchOn ? settledAt : physicalRef.current.simMs).toISOString(),
         ))
       }
-      await queueBackend(() => simulatorApi.settings(configRef.current.connections.backendUrl, configRef.current.connections.organization, {
-        ...configRef.current.settings, data_source: 'simulator', mode: 'active',
-        cycle_seconds: definition.setup.tier2CycleS, power_saving: definition.setup.powerSaving,
-      }))
     }
     const runtime = scenarioRef.current
     runtime.active = true
@@ -599,6 +845,12 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     runtime.nextEventIndex = 0
     runtime.observations = freshObservations()
     runtime.results = definition.expectations.map(() => 'pending')
+    runtime.metrics = {
+      ...freshMetrics(),
+      minimumBatterySocPercent: physicalRef.current.batterySocWh
+        / configRef.current.site.batteryCapacityWh * 100,
+    }
+    runtime.lastCommands = {}
     runtime.log.unshift({ timestamp: new Date(physicalRef.current.simMs).toISOString(), message: 'Scenario started' })
     scenarioRef.current = runtime
     setScenario({ ...runtime })
@@ -607,6 +859,56 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
     setTierEnabled('T1', definition.setup.tier1)
     setTierEnabled('T2', definition.setup.tier2)
   }, [queueBackend, setTierEnabled])
+
+  const runScenarioComparison = useCallback(async () => {
+    const definition = loadedDefinitionRef.current?.id === scenarioRef.current.loadedId
+      ? loadedDefinitionRef.current : null
+    if (!definition) throw new Error('Load a scenario first')
+    if (!definition.setup.tier2) throw new Error('Comparison requires Tier-2 to be enabled')
+    const originalPolicy = configRef.current.settings.tier2_policy
+    const run = async (policy: 'crisp' | 'fuzzy_active') => {
+      loadScenario(definition.id)
+      const completion = new Promise<ScenarioRunSummary>((resolve) => {
+        completionRef.current = resolve
+      })
+      await startScenario(true, policy)
+      return completion
+    }
+    setComparison({
+      status: 'running_crisp', scenarioId: definition.id,
+      crisp: null, fuzzy: null, differences: null, error: null,
+    })
+    try {
+      const crisp = await run('crisp')
+      setComparison({
+        status: 'running_fuzzy', scenarioId: definition.id,
+        crisp, fuzzy: null, differences: null, error: null,
+      })
+      const fuzzy = await run('fuzzy_active')
+      setComparison({
+        status: 'complete', scenarioId: definition.id,
+        crisp, fuzzy, differences: differenceMetrics(crisp.metrics, fuzzy.metrics),
+        error: null,
+      })
+    } catch (error) {
+      completionRef.current = null
+      setComparison({
+        status: 'error', scenarioId: definition.id,
+        crisp: null, fuzzy: null, differences: null,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    } finally {
+      configRef.current.settings.tier2_policy = originalPolicy
+      setConfiguration(cloneConfiguration(configRef.current))
+      saveStoredConfiguration(configRef.current)
+      await queueBackend(() => simulatorApi.settings(
+        configRef.current.connections.backendUrl,
+        configRef.current.connections.organization,
+        { tier2_policy: originalPolicy },
+      ))
+    }
+  }, [loadScenario, queueBackend, startScenario])
 
   const stopScenario = useCallback(() => {
     const runtime = scenarioRef.current
@@ -656,10 +958,12 @@ export function SimulatorProvider({ children }: { children: ReactNode }) {
 
   return (
     <SimulatorContext.Provider value={{
-      configuration, dashboard, climateRows, cities, loading, running, scenario, scenarioDefinition,
+      configuration, dashboard, climateRows, cities, loading, running,
+      scenario, scenarioDefinition, comparison,
       saveConfiguration, resetConfiguration, reloadClimate,
       toggleRunning() { runningRef.current = !runningRef.current; setRunning(runningRef.current); publish() },
       setTierEnabled, toggleBreaker, selectScenario, loadScenario, startScenario,
+      runScenarioComparison,
       stopScenario, updateScenarioSetup, setScenarioBatteryVoltage,
     }}>
       {children}

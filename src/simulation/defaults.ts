@@ -1,4 +1,4 @@
-import type { ScenarioObservations, SimulatorConfiguration, SimulatedBreaker } from './types'
+import type { ScenarioMetrics, ScenarioObservations, SimulatorConfiguration, SimulatedBreaker } from './types'
 
 export const STORAGE_KEY = 'smartbreaker:simulator:v2'
 export const CHECKPOINT_KEY = 'smartbreaker:checkpoint:v2'
@@ -30,9 +30,10 @@ export const defaultConfiguration: SimulatorConfiguration = {
   breakers: structuredClone(defaultBreakers),
   settings: {
     cycle_seconds: 5, power_saving: false, mode: 'active', data_source: 'simulator',
+    tier2_policy: 'crisp',
     battery_low_voltage_V: 24, battery_low_margin_V: 0.5,
     battery_shutdown_buffer_percent: 2, joule_deficit_limit_J: 10_800_000,
-    grid_present_min_V: 100,
+    grid_present_min_V: 100, night_reserve_percent: 30,
   },
 }
 
@@ -40,7 +41,17 @@ export const cloneConfiguration = (value: SimulatorConfiguration): SimulatorConf
 export const freshObservations = (): ScenarioObservations => ({
   tier1Evaluations: 0, tier1Situations: [], tier1Commands: [], tier2Branches: [],
   tier2ActionsReceived: [], tier2ActionsApplied: [], tier2ActionsBlocked: [],
-  tier2Alerts: [], backendErrors: [],
+  tier2Alerts: [], backendErrors: [], fuzzyBands: [], fuzzyFallbackReasons: [],
+  counterfactualBranches: [], bandTransitions: [], fuzzyCycles: [],
+})
+export const freshMetrics = (): ScenarioMetrics => ({
+  gridImportWh: 0,
+  minimumBatterySocPercent: 100,
+  timeBelowReserveS: 0,
+  optionalLoadServedWh: 0,
+  mandatoryOffCommands: 0,
+  actionCount: 0,
+  commandReversals: 0,
 })
 
 export function loadStoredConfiguration(): SimulatorConfiguration {
@@ -50,7 +61,15 @@ export function loadStoredConfiguration(): SimulatorConfiguration {
     if (value?.version !== 2 || !value.site || !value.connections || !Array.isArray(value.breakers)) {
       return cloneConfiguration(defaultConfiguration)
     }
-    return { ...cloneConfiguration(defaultConfiguration), ...value } as SimulatorConfiguration
+    const defaults = cloneConfiguration(defaultConfiguration)
+    return {
+      ...defaults,
+      ...value,
+      connections: { ...defaults.connections, ...value.connections },
+      site: { ...defaults.site, ...value.site },
+      settings: { ...defaults.settings, ...value.settings },
+      breakers: value.breakers as SimulatedBreaker[],
+    } as SimulatorConfiguration
   } catch {
     return cloneConfiguration(defaultConfiguration)
   }
